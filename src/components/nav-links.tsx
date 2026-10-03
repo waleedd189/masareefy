@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/cards", label: "البطاقات", icon: "💳" },
   { href: "/transactions", label: "العمليات", icon: "🧾" },
   { href: "/messages", label: "رسائل البنك", icon: "📨" },
+  { href: "/offline", label: "أوفلاين", icon: "📱" },
   { href: "/settings", label: "الإعدادات", icon: "⚙️" },
 ];
 

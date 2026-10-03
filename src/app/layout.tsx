@@ -7,6 +7,19 @@ export const metadata: Metadata = {
   description:
     "تطبيق لمتابعة مصروفات بطاقات الفيزا وأرصدتها، بيقرأ رسائل البنك تلقائياً ويربط كل رسالة بالبطاقة الخاصة بها.",
   applicationName: "مصاريفي",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "مصاريفي",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {

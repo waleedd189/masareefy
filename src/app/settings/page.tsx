@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { CopyField } from "@/components/copy-field";
 import { ParserTester } from "@/components/forms/parser-tester";
+import { DataManagement } from "@/components/settings/data-management";
 import { PageHeader, SectionCard } from "@/components/ui";
 import { db } from "@/db/client";
 import { apiTokens, parserRules } from "@/db/schema";
@@ -239,13 +240,15 @@ export default async function SettingsPage() {
         )}
       </SectionCard>
 
-      <SectionCard title="📤 تصدير البيانات" subtitle="نسخة احتياطية من كل العمليات">
-        <div className="flex flex-wrap gap-2">
-          <a href="/api/export?format=csv" className="btn-ghost">
-            تحميل CSV
+      <SectionCard title="💾 إدارة البيانات" subtitle="احتفظ بنسخة من بياناتك أو امسح بيانات التجربة قبل ما تبدأ">
+        <DataManagement />
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-ink-700/50 pt-4">
+          <span className="text-xs text-ink-400">تصدير العمليات فقط:</span>
+          <a href="/api/export?format=csv" className="btn-ghost !px-3 !py-1.5 !text-xs">
+            CSV
           </a>
-          <a href="/api/export?format=json" className="btn-ghost">
-            تحميل JSON
+          <a href="/api/export?format=json" className="btn-ghost !px-3 !py-1.5 !text-xs">
+            JSON
           </a>
         </div>
       </SectionCard>
