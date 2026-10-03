@@ -4,7 +4,7 @@ import { createClient, type Client } from "@libsql/client";
 import { drizzle, type LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "./schema";
 
-const url = process.env.DATABASE_URL ?? "file:./data/masareefy.db";
+const url = process.env.DATABASE_URL ?? process.env.TURSO_DATABASE_URL ?? "file:./data/masareefy.db";
 
 // لو قاعدة البيانات ملف محلي، نتأكد إن المجلد موجود قبل الاتصال
 if (url.startsWith("file:")) {
@@ -28,7 +28,7 @@ export const client: Client =
   globalForDb.__masareefyClient ??
   createClient({
     url,
-    authToken: process.env.DATABASE_AUTH_TOKEN,
+    authToken: process.env.DATABASE_AUTH_TOKEN ?? process.env.TURSO_AUTH_TOKEN,
   });
 
 export const db: LibSQLDatabase<typeof schema> = globalForDb.__masareefyDb ?? drizzle(client, { schema });
