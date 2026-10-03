@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { apiTokens, categories, parserRules } from "@/db/schema";
+import { apiTokens, cards, categories, messages, parserRules, transactions } from "@/db/schema";
 import { DEFAULT_CATEGORIES } from "@/lib/default-categories";
 
 export async function createCategoryAction(formData: FormData): Promise<void> {
@@ -95,4 +95,37 @@ export async function deleteRuleAction(formData: FormData): Promise<void> {
   const id = String(formData.get("id") ?? "");
   if (id) await db.delete(parserRules).where(eq(parserRules.id, id));
   revalidatePath("/settings");
+}
+
+export type ClearDemoDataState = {
+  ok?: boolean;
+  message?: string;
+};
+
+/**
+ * يفرّغ بيانات الاستخدام التي ينشئها db:seed، مع الاحتفاظ بإعدادات التطبيق.
+ * حذف العمليات والرسائل صراحةً يجعل السلوك ثابتاً حتى لو اختلف إعداد foreign keys.
+ */
+export async function clearDemoDataAction(
+  previousState: ClearDemoDataState,
+): Promise<ClearDemoDataState> {
+  void previousState;
+  try {
+    await db.transaction(async (tx) => {
+      await tx.delete(transactions);
+      await tx.delete(messages);
+      await tx.delete(cards);
+    });
+
+    revalidatePath("/");
+    revalidatePath("/cards");
+    revalidatePath("/transactions");
+    revalidatePath("/messages");
+    revalidatePath("/settings");
+
+    return { ok: true, message: "تم مسح البطاقات والعمليات والرسائل بنجاح." };
+  } catch (error) {
+    console.error("Failed to clear demo data", error);
+    return { ok: false, message: "حصلت مشكلة أثناء المسح. جرّب مرة تانية." };
+  }
 }

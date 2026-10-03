@@ -9,7 +9,9 @@ const url = process.env.DATABASE_URL ?? "file:./data/masareefy.db";
 // لو قاعدة البيانات ملف محلي، نتأكد إن المجلد موجود قبل الاتصال
 if (url.startsWith("file:")) {
   const filePath = url.slice("file:".length).split("?")[0];
-  const absolute = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+  const absolute = path.isAbsolute(filePath)
+    ? filePath
+    : path.join(/* turbopackIgnore: true */ process.cwd(), filePath);
   try {
     mkdirSync(path.dirname(absolute), { recursive: true });
   } catch {
