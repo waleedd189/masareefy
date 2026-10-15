@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { VoiceExpense } from "@/components/offline/voice-expense";
 import { BANK_OPTIONS } from "@/lib/sms/banks";
 import { parseSms } from "@/lib/sms/parse";
 import { TX_TYPES, TX_TYPE_LABELS, type TxType } from "@/lib/sms/types";
@@ -188,6 +189,23 @@ export function OfflineCenter() {
     await enqueue({ id: crypto.randomUUID(), kind: "transaction", createdAt: new Date().toISOString(), payload });
   };
 
+  const addVoiceTransaction = async (payload: {
+    id: string;
+    cardId: string;
+    amount: number;
+    type: string;
+    merchant: string | null;
+    note: string;
+    occurredAt: string;
+  }) => {
+    await enqueue({
+      id: crypto.randomUUID(),
+      kind: "transaction",
+      createdAt: new Date().toISOString(),
+      payload,
+    });
+  };
+
   const addMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -226,6 +244,8 @@ export function OfflineCenter() {
         </div>
         {notice ? <p className="mt-3 text-xs font-semibold text-ink-50" role="status">{notice}</p> : null}
       </div>
+
+      <VoiceExpense cards={cards} onSave={addVoiceTransaction} />
 
       <div className="grid gap-4 xl:grid-cols-3">
         <form onSubmit={addMessage} className="surface space-y-3 p-4">

@@ -1,5 +1,5 @@
-const CACHE_NAME = "masareefy-shell-v1";
-const DATA_CACHE = "masareefy-pages-v1";
+const CACHE_NAME = "masareefy-shell-v2";
+const DATA_CACHE = "masareefy-pages-v2";
 const OFFLINE_URL = "/offline";
 const DB_NAME = "masareefy-offline";
 const DB_VERSION = 1;

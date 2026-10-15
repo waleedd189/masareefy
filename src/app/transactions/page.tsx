@@ -40,7 +40,11 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
 
   return (
     <div className="animate-rise space-y-6">
-      <PageHeader title="العمليات" subtitle="كل الحركات على بطاقاتك — من الرسائل أو يدوي" />
+      <PageHeader
+        title="العمليات"
+        subtitle="كل الحركات على بطاقاتك — من الرسائل أو يدوي"
+        action={<Link href="/offline#voice-expense" className="btn-primary">🎙️ إضافة بالصوت</Link>}
+      />
 
       <Suspense fallback={null}>
         <CollapsiblePanel label="عملية جديدة" openLabel="＋ تسجيل عملية يدوية" defaultOpenParam="new">

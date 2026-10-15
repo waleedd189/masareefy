@@ -1,0 +1,2254 @@
+diff --git a/README.md b/README.md
+index a28bfbb..d06d928 100644
+--- a/README.md
++++ b/README.md
+@@ -18,7 +18,9 @@
+ | 🏷️ **تصنيف تلقائي** | 16 فئة جاهزة بكلمات مفتاحية مصرية (كارفور، طلبات، أوبر، فودافون…) وتقدر تضيف وتعدّل |
+ | 📊 **تحليلات** | مصروف الشهر مقابل الشهر اللي فات، 6 شهور، توزيع الفئات، أكتر الأماكن صرفاً |
+ | 🧪 **قواعد مخصّصة** | لو بنكك بيكتب صيغة غريبة، ضيف Regex من صفحة الإعدادات من غير ما تلمس الكود |
+-| 📤 **تصدير** | CSV / JSON لكل العمليات |
++| 📤 **تصدير ونسخ احتياطي** | CSV / JSON للعمليات + نسخة JSON شاملة لبيانات التطبيق |
++| 📱 **PWA أوفلاين** | يتثبت كتطبيق على الموبايل، ويحفظ البطاقات والعمليات ورسائل البنك محليًا ثم يزامنها تلقائيًا |
++| 🎙️ **إضافة بالصوت** | يحوّل الكلام العربي المصري إلى مسودة مصروف ويستخرج المبلغ والتاجر والنوع والبطاقة قبل الحفظ |
+ 
+ ---
+ 
+@@ -45,6 +47,7 @@ npm run dev
+ | `npm run db:seed` | بيانات تجريبية |
+ | `npm run db:studio` | واجهة Drizzle Studio لاستعراض البيانات |
+ | `npm run parser:test` | اختبار محرّك تحليل الرسائل على عيّنات حقيقية |
++| `npm run voice:test` | اختبار فهم أوامر المصروفات الصوتية بالعربي المصري |
+ 
+ ### متغيرات البيئة
+ 
+@@ -54,6 +57,8 @@ DATABASE_AUTH_TOKEN=""                    # لو بتستخدم Turso
+ INGEST_TOKEN="dev-local-token"            # مفتاح احتياطي للـ webhook (الأفضل تعمل مفتاح من صفحة الإعدادات)
+ ```
+ 
++تكامل Turso الرسمي في Vercel يستخدم `TURSO_DATABASE_URL` و`TURSO_AUTH_TOKEN`؛ التطبيق يقبل الاسمين تلقائيًا بدون نسخ المتغيرات.
++
+ ---
+ 
+ ## 📲 استقبال رسائل البنك تلقائياً
+@@ -92,6 +97,18 @@ Content-Type: application/json
+ 
+ ---
+ 
++## 📱 التثبيت والعمل أوفلاين
++
++1. افتح الموقع مرة واحدة بالإنترنت، ثم افتح صفحة **أوفلاين**.
++2. Android/Chrome: القائمة ⋮ ← **تثبيت التطبيق** أو **إضافة إلى الشاشة الرئيسية**.
++3. iPhone/Safari: **مشاركة** ← **إضافة إلى الشاشة الرئيسية**.
++4. بدون إنترنت يمكنك إضافة بطاقة أو عملية يدوية أو رسالة بنك؛ تُحفظ في IndexedDB على الجهاز.
++5. عند عودة الاتصال، تتم المزامنة تلقائيًا عبر `/api/offline` مع حماية من تكرار العناصر.
++
++> لا تمسح بيانات المتصفح أو تحذف التطبيق وفيه عناصر معلّقة. الـPWA لا يستطيع قراءة SMS تلقائيًا بسبب قيود المتصفح؛ هذه الخطوة تحتاج تطبيق Android أصلي في المرحلة التالية.
++
++---
++
+ ## 🧠 إزاي المحلل شغّال؟
+ 
+ ```
+@@ -149,7 +166,8 @@ src/
+ │  ├─ transactions/        # العمليات + فلاتر + إضافة يدوية
+ │  ├─ messages/            # صندوق رسائل البنك + لصق + مراجعة
+ │  ├─ settings/            # مفاتيح API، الفئات، القواعد، التصدير
+-│  └─ api/                 # ingest (webhook) · parse · export
++│  ├─ offline/             # مركز الإدخال والمزامنة بدون إنترنت
++│  └─ api/                 # ingest (webhook) · parse · export · offline sync
+ ├─ components/             # واجهات قابلة لإعادة الاستخدام
+ ├─ db/                     # Drizzle: schema + client + migrator
+ ├─ lib/
+@@ -179,9 +197,9 @@ src/
+ - [ ] تسجيل دخول متعدد المستخدمين (Auth.js)
+ - [ ] ميزانيات شهرية لكل فئة مع تنبيهات
+ - [ ] تذكير بمواعيد سداد البطاقات
+-- [ ] تطبيق أندرويد بسيط يبعت الرسائل مباشرة
++- [ ] تطبيق أندرويد أصلي يقرأ الرسائل بعد منح الصلاحية
+ - [ ] استيراد كشف حساب PDF/CSV
+-- [ ] PWA للعمل أوفلاين
++- [x] PWA قابلة للتثبيت والعمل أوفلاين مع مزامنة تلقائية
+ 
+ ---
+ 
+diff --git a/package.json b/package.json
+index 283dccf..58d109c 100644
+--- a/package.json
++++ b/package.json
+@@ -11,7 +11,8 @@
+     "db:migrate": "tsx scripts/migrate.ts",
+     "db:seed": "tsx scripts/seed.ts",
+     "db:studio": "drizzle-kit studio",
+-    "parser:test": "tsx scripts/test-parser.ts"
++    "parser:test": "tsx scripts/test-parser.ts",
++    "voice:test": "tsx scripts/test-voice.ts"
+   },
+   "dependencies": {
+     "@fontsource-variable/cairo": "^5.3.0",
+diff --git a/public/icons/apple-touch-icon.png b/public/icons/apple-touch-icon.png
+new file mode 100644
+index 0000000..d1de129
+Binary files /dev/null and b/public/icons/apple-touch-icon.png differ
+diff --git a/public/icons/icon-192.png b/public/icons/icon-192.png
+new file mode 100644
+index 0000000..762c6e2
+Binary files /dev/null and b/public/icons/icon-192.png differ
+diff --git a/public/icons/icon-512.png b/public/icons/icon-512.png
+new file mode 100644
+index 0000000..6410fe0
+Binary files /dev/null and b/public/icons/icon-512.png differ
+diff --git a/public/icons/icon-maskable-512.png b/public/icons/icon-maskable-512.png
+new file mode 100644
+index 0000000..c5d6e23
+Binary files /dev/null and b/public/icons/icon-maskable-512.png differ
+diff --git a/public/sw.js b/public/sw.js
+new file mode 100644
+index 0000000..d97956e
+--- /dev/null
++++ b/public/sw.js
+@@ -0,0 +1,136 @@
++const CACHE_NAME = "masareefy-shell-v2";
++const DATA_CACHE = "masareefy-pages-v2";
++const OFFLINE_URL = "/offline";
++const DB_NAME = "masareefy-offline";
++const DB_VERSION = 1;
++
++async function cacheOfflineShell() {
++  const cache = await caches.open(CACHE_NAME);
++  const response = await fetch(OFFLINE_URL, { cache: "reload" });
++  if (!response.ok) throw new Error("Offline shell unavailable");
++  const html = await response.clone().text();
++  await cache.put(OFFLINE_URL, response);
++
++  const assets = [...html.matchAll(/(?:src|href)="([^"#]+)"/g)]
++    .map((match) => match[1])
++    .filter((url) => url.startsWith("/_next/static/") || url.startsWith("/icons/"));
++  await Promise.allSettled([...new Set(assets)].map((url) => cache.add(url)));
++  await Promise.allSettled([
++    cache.add("/manifest.webmanifest"),
++    cache.add("/icons/icon-192.png"),
++    cache.add("/icons/icon-512.png"),
++  ]);
++}
++
++self.addEventListener("install", (event) => {
++  event.waitUntil(cacheOfflineShell().then(() => self.skipWaiting()));
++});
++
++self.addEventListener("activate", (event) => {
++  event.waitUntil(
++    Promise.all([
++      caches.keys().then((keys) =>
++        Promise.all(keys.filter((key) => ![CACHE_NAME, DATA_CACHE].includes(key)).map((key) => caches.delete(key))),
++      ),
++      self.clients.claim(),
++    ]),
++  );
++});
++
++self.addEventListener("fetch", (event) => {
++  const request = event.request;
++  if (request.method !== "GET") return;
++
++  const url = new URL(request.url);
++  if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
++
++  if (request.mode === "navigate") {
++    event.respondWith(
++      fetch(request)
++        .then(async (response) => {
++          if (response.ok) {
++            const cache = await caches.open(DATA_CACHE);
++            await cache.put(request, response.clone());
++          }
++          return response;
++        })
++        .catch(async () => {
++          const cached = await caches.match(request);
++          return cached || (await caches.match(OFFLINE_URL));
++        }),
++    );
++    return;
++  }
++
++  if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icons/")) {
++    event.respondWith(
++      caches.match(request).then(
++        (cached) =>
++          cached ||
++          fetch(request).then(async (response) => {
++            if (response.ok) (await caches.open(CACHE_NAME)).put(request, response.clone());
++            return response;
++          }),
++      ),
++    );
++  }
++});
++
++function openOfflineDb() {
++  return new Promise((resolve, reject) => {
++    const request = indexedDB.open(DB_NAME, DB_VERSION);
++    request.onupgradeneeded = () => {
++      const database = request.result;
++      if (!database.objectStoreNames.contains("outbox")) database.createObjectStore("outbox", { keyPath: "id" });
++      if (!database.objectStoreNames.contains("snapshots")) database.createObjectStore("snapshots", { keyPath: "key" });
++    };
++    request.onsuccess = () => resolve(request.result);
++    request.onerror = () => reject(request.error);
++  });
++}
++
++async function readOutbox() {
++  const database = await openOfflineDb();
++  return new Promise((resolve, reject) => {
++    const request = database.transaction("outbox", "readonly").objectStore("outbox").getAll();
++    request.onsuccess = () => resolve(request.result);
++    request.onerror = () => reject(request.error);
++  });
++}
++
++async function removeOutbox(ids) {
++  const database = await openOfflineDb();
++  return new Promise((resolve, reject) => {
++    const transaction = database.transaction("outbox", "readwrite");
++    const store = transaction.objectStore("outbox");
++    ids.forEach((id) => store.delete(id));
++    transaction.oncomplete = () => resolve();
++    transaction.onerror = () => reject(transaction.error);
++  });
++}
++
++async function syncOutbox() {
++  const operations = await readOutbox();
++  if (!operations.length) return;
++  const response = await fetch("/api/offline", {
++    method: "POST",
++    headers: { "content-type": "application/json" },
++    credentials: "include",
++    body: JSON.stringify({ operations }),
++  });
++  if (!response.ok) throw new Error("Sync failed");
++  const result = await response.json();
++  const completed = result.results.filter((item) => item.ok).map((item) => item.id);
++  await removeOutbox(completed);
++  const clients = await self.clients.matchAll({ type: "window" });
++  clients.forEach((client) => client.postMessage({ type: "OUTBOX_SYNCED" }));
++}
++
++self.addEventListener("sync", (event) => {
++  if (event.tag === "masareefy-outbox") event.waitUntil(syncOutbox());
++});
++
++self.addEventListener("message", (event) => {
++  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
++  if (event.data?.type === "SYNC_OUTBOX") event.waitUntil(syncOutbox());
++});
+diff --git a/scripts/test-voice.ts b/scripts/test-voice.ts
+new file mode 100644
+index 0000000..30f9b15
+--- /dev/null
++++ b/scripts/test-voice.ts
+@@ -0,0 +1,29 @@
++import assert from "node:assert/strict";
++import { parseSpokenArabicNumber, parseVoiceExpense, type VoiceCard } from "../src/lib/voice-expense";
++
++const cards: VoiceCard[] = [
++  { id: "cib", name: "فيزا CIB الأساسية", last4: "4321", bankKey: "cib" },
++  { id: "nbe", name: "ماستر الأهلي", last4: "7788", bankKey: "nbe" },
++];
++
++assert.equal(parseSpokenArabicNumber("ميتين وخمسين"), 250);
++assert.equal(parseSpokenArabicNumber("الف وتلتميه وخمسين"), 1350);
++assert.equal(parseSpokenArabicNumber("اتنين الاف وميتين"), 2200);
++
++const purchase = parseVoiceExpense("دفعت ٢٥٠ جنيه في كارفور على فيزا CIB الأساسية", cards);
++assert.equal(purchase.amount, 250);
++assert.equal(purchase.merchant, "كارفور");
++assert.equal(purchase.cardId, "cib");
++assert.equal(purchase.type, "PURCHASE");
++
++const spoken = parseVoiceExpense("سجل ميتين وخمسين جنيه في طلبات على كارت 4321", cards);
++assert.equal(spoken.amount, 250);
++assert.equal(spoken.merchant, "طلبات");
++assert.equal(spoken.cardId, "cib");
++
++const withdrawal = parseVoiceExpense("سحبت 1000 جنيه من ماكينة على ماستر الأهلي", cards);
++assert.equal(withdrawal.amount, 1000);
++assert.equal(withdrawal.cardId, "nbe");
++assert.equal(withdrawal.type, "WITHDRAWAL");
++
++console.log("✅ نجحت اختبارات إدخال المصروفات بالصوت");
+diff --git a/src/app/api/export/route.ts b/src/app/api/export/route.ts
+index b47d4af..dc0cab5 100644
+--- a/src/app/api/export/route.ts
++++ b/src/app/api/export/route.ts
+@@ -1,4 +1,6 @@
+ import { NextResponse, type NextRequest } from "next/server";
++import { db } from "@/db/client";
++import { apiTokens, cards, categories, messages, parserRules, settings, transactions } from "@/db/schema";
+ import { runMigrations } from "@/db/migrate";
+ import { listCards, listTransactions } from "@/lib/services/queries";
+ 
+@@ -14,16 +16,55 @@ function csvEscape(value: unknown): string {
+ export async function GET(request: NextRequest) {
+   await runMigrations();
+   const format = request.nextUrl.searchParams.get("format") ?? "csv";
+-  const transactions = await listTransactions({ limit: 10000 });
++  const date = new Date().toISOString().slice(0, 10);
++
++  if (format === "backup") {
++    const [cardRows, transactionRows, messageRows, categoryRows, ruleRows, settingRows, tokenRows] = await Promise.all([
++      db.select().from(cards),
++      db.select().from(transactions),
++      db.select().from(messages),
++      db.select().from(categories),
++      db.select().from(parserRules),
++      db.select().from(settings),
++      db.select().from(apiTokens),
++    ]);
++    const backup = {
++      application: "masareefy",
++      schemaVersion: 1,
++      exportedAt: new Date().toISOString(),
++      data: {
++        cards: cardRows,
++        transactions: transactionRows,
++        messages: messageRows,
++        categories: categoryRows,
++        parserRules: ruleRows,
++        settings: settingRows,
++        apiTokens: tokenRows,
++      },
++    };
++
++    return new NextResponse(JSON.stringify(backup, null, 2), {
++      headers: {
++        "content-type": "application/json; charset=utf-8",
++        "content-disposition": `attachment; filename="masareefy-backup-${date}.json"`,
++        "cache-control": "no-store",
++      },
++    });
++  }
++
++  const transactionRows = await listTransactions({ limit: 10000 });
+ 
+   if (format === "json") {
+-    const cards = await listCards(true);
+-    return NextResponse.json({ exportedAt: new Date().toISOString(), cards, transactions });
++    const cardRows = await listCards(true);
++    return NextResponse.json(
++      { exportedAt: new Date().toISOString(), cards: cardRows, transactions: transactionRows },
++      { headers: { "cache-control": "no-store" } },
++    );
+   }
+ 
+   const header = ["التاريخ", "البطاقة", "آخر4", "النوع", "الاتجاه", "المبلغ", "العملة", "التاجر", "الفئة", "المصدر", "ملاحظة"];
+   const lines = [header.join(",")];
+-  for (const tx of transactions) {
++  for (const tx of transactionRows) {
+     lines.push(
+       [
+         new Date(tx.occurredAt).toISOString(),
+diff --git a/src/app/api/offline/route.ts b/src/app/api/offline/route.ts
+new file mode 100644
+index 0000000..e93f848
+--- /dev/null
++++ b/src/app/api/offline/route.ts
+@@ -0,0 +1,138 @@
++import { NextResponse, type NextRequest } from "next/server";
++import { desc, eq } from "drizzle-orm";
++import { z } from "zod";
++import { db } from "@/db/client";
++import { cards, categories, transactions } from "@/db/schema";
++import { runMigrations } from "@/db/migrate";
++import { recomputeCard } from "@/lib/services/balances";
++import { suggestCategoryId } from "@/lib/services/categorize";
++import { ingestMessage } from "@/lib/services/ingest";
++import { getBank } from "@/lib/sms/banks";
++import { DEFAULT_DIRECTION, type TxType } from "@/lib/sms/types";
++
++export const runtime = "nodejs";
++export const dynamic = "force-dynamic";
++
++const cardPayload = z.object({
++  id: z.string().uuid(),
++  name: z.string().trim().min(2).max(80),
++  last4: z.string().regex(/^\d{4}$/),
++  bankKey: z.string().trim().default("generic"),
++  type: z.enum(["CREDIT", "DEBIT", "PREPAID"]).default("CREDIT"),
++  currency: z.string().trim().min(3).max(3).default("EGP"),
++  openingBalance: z.number().finite().default(0),
++});
++
++const transactionPayload = z.object({
++  id: z.string().uuid(),
++  cardId: z.string().uuid(),
++  type: z.string().trim().default("PURCHASE"),
++  direction: z.enum(["OUT", "IN"]).optional(),
++  amount: z.number().positive().finite(),
++  merchant: z.string().trim().max(120).optional().nullable(),
++  note: z.string().trim().max(500).optional().nullable(),
++  occurredAt: z.string().datetime(),
++});
++
++const messagePayload = z.object({
++  text: z.string().trim().min(5).max(10000),
++  sender: z.string().trim().max(100).optional().nullable(),
++  cardId: z.string().uuid().optional().nullable(),
++  receivedAt: z.string().datetime(),
++});
++
++const operationSchema = z.object({
++  id: z.string().uuid(),
++  kind: z.enum(["card", "transaction", "message"]),
++  createdAt: z.string().datetime(),
++  payload: z.record(z.string(), z.unknown()),
++});
++
++const batchSchema = z.object({ operations: z.array(operationSchema).min(1).max(100) });
++
++export async function GET() {
++  await runMigrations();
++  const [cardRows, categoryRows, recentTransactions] = await Promise.all([
++    db.select().from(cards).where(eq(cards.isArchived, false)),
++    db.select().from(categories),
++    db.select().from(transactions).orderBy(desc(transactions.occurredAt)).limit(50),
++  ]);
++
++  return NextResponse.json(
++    { ok: true, cards: cardRows, categories: categoryRows, transactions: recentTransactions },
++    { headers: { "cache-control": "no-store" } },
++  );
++}
++
++export async function POST(request: NextRequest) {
++  await runMigrations();
++  const body = await request.json().catch(() => null);
++  const parsed = batchSchema.safeParse(body);
++  if (!parsed.success) {
++    return NextResponse.json({ ok: false, error: "بيانات المزامنة غير صالحة" }, { status: 400 });
++  }
++
++  const rank = { card: 0, transaction: 1, message: 2 } as const;
++  const operations = [...parsed.data.operations].sort((a, b) => rank[a.kind] - rank[b.kind]);
++  const results: { id: string; ok: boolean; error?: string }[] = [];
++
++  for (const operation of operations) {
++    try {
++      if (operation.kind === "card") {
++        const data = cardPayload.parse(operation.payload);
++        const [existing] = await db.select({ id: cards.id }).from(cards).where(eq(cards.id, data.id)).limit(1);
++        if (!existing) {
++          const bank = getBank(data.bankKey);
++          await db.insert(cards).values({
++            id: data.id,
++            name: data.name,
++            last4: data.last4,
++            bankKey: data.bankKey,
++            bankName: bank.nameAr,
++            type: data.type,
++            currency: data.currency,
++            openingBalance: data.openingBalance,
++            currentBalance: data.openingBalance,
++          });
++          await recomputeCard(data.id);
++        }
++      } else if (operation.kind === "transaction") {
++        const data = transactionPayload.parse(operation.payload);
++        const [existing] = await db.select({ id: transactions.id }).from(transactions).where(eq(transactions.id, data.id)).limit(1);
++        if (!existing) {
++          const type = data.type as TxType;
++          const categoryId = await suggestCategoryId({ merchant: data.merchant, type });
++          await db.insert(transactions).values({
++            id: data.id,
++            cardId: data.cardId,
++            type,
++            direction: data.direction ?? DEFAULT_DIRECTION[type] ?? "OUT",
++            amount: data.amount,
++            currency: "EGP",
++            merchant: data.merchant || null,
++            note: data.note || null,
++            categoryId,
++            occurredAt: new Date(data.occurredAt),
++            source: "MANUAL",
++          });
++          await recomputeCard(data.cardId);
++        }
++      } else {
++        const data = messagePayload.parse(operation.payload);
++        await ingestMessage({
++          rawText: data.text,
++          sender: data.sender,
++          cardId: data.cardId,
++          receivedAt: new Date(data.receivedAt),
++          source: "PASTE",
++        });
++      }
++      results.push({ id: operation.id, ok: true });
++    } catch (error) {
++      console.error(`Offline sync failed for ${operation.id}`, error);
++      results.push({ id: operation.id, ok: false, error: "تعذر حفظ العنصر" });
++    }
++  }
++
++  return NextResponse.json({ ok: results.every((item) => item.ok), results });
++}
+diff --git a/src/app/layout.tsx b/src/app/layout.tsx
+index efa849f..b8aeb45 100644
+--- a/src/app/layout.tsx
++++ b/src/app/layout.tsx
+@@ -7,6 +7,19 @@ export const metadata: Metadata = {
+   description:
+     "تطبيق لمتابعة مصروفات بطاقات الفيزا وأرصدتها، بيقرأ رسائل البنك تلقائياً ويربط كل رسالة بالبطاقة الخاصة بها.",
+   applicationName: "مصاريفي",
++  manifest: "/manifest.webmanifest",
++  appleWebApp: {
++    capable: true,
++    statusBarStyle: "black-translucent",
++    title: "مصاريفي",
++  },
++  icons: {
++    icon: [
++      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
++      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
++    ],
++    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
++  },
+ };
+ 
+ export const viewport: Viewport = {
+diff --git a/src/app/manifest.ts b/src/app/manifest.ts
+new file mode 100644
+index 0000000..7606ba7
+--- /dev/null
++++ b/src/app/manifest.ts
+@@ -0,0 +1,23 @@
++import type { MetadataRoute } from "next";
++
++export default function manifest(): MetadataRoute.Manifest {
++  return {
++    name: "مصاريفي — متابعة الفيز والمصروفات",
++    short_name: "مصاريفي",
++    description: "متابعة بطاقاتك ومصروفاتك ورسائل البنك، حتى بدون اتصال بالإنترنت.",
++    start_url: "/",
++    scope: "/",
++    display: "standalone",
++    orientation: "portrait-primary",
++    background_color: "#070d16",
++    theme_color: "#070d16",
++    lang: "ar",
++    dir: "rtl",
++    categories: ["finance", "productivity"],
++    icons: [
++      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
++      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
++      { src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
++    ],
++  };
++}
+diff --git a/src/app/offline/page.tsx b/src/app/offline/page.tsx
+new file mode 100644
+index 0000000..e94ce6e
+--- /dev/null
++++ b/src/app/offline/page.tsx
+@@ -0,0 +1,29 @@
++import { OfflineCenter } from "@/components/offline/offline-center";
++import { PageHeader } from "@/components/ui";
++
++export const dynamic = "force-static";
++
++export default function OfflinePage() {
++  return (
++    <div className="animate-rise space-y-6">
++      <PageHeader
++        title="مصاريفي أوفلاين"
++        subtitle="أضف بطاقات وعمليات ورسائل بنك بدون إنترنت، وهتتزامن تلقائيًا لما الاتصال يرجع"
++      />
++      <OfflineCenter />
++      <div className="grid gap-3 sm:grid-cols-2">
++        <div className="rounded-2xl border border-ink-700/60 bg-ink-900/50 p-4 text-xs leading-relaxed text-ink-300">
++          <p className="mb-1 font-bold text-ink-50">Android</p>
++          من Chrome اضغط القائمة ⋮ ثم «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».
++        </div>
++        <div className="rounded-2xl border border-ink-700/60 bg-ink-900/50 p-4 text-xs leading-relaxed text-ink-300">
++          <p className="mb-1 font-bold text-ink-50">iPhone</p>
++          من Safari اضغط زر المشاركة ثم «إضافة إلى الشاشة الرئيسية».
++        </div>
++      </div>
++      <div className="rounded-2xl border border-amber-500/25 bg-amber-500/5 p-4 text-xs leading-relaxed text-ink-400">
++        افتح التطبيق مرة واحدة بالإنترنت بعد التثبيت. البيانات غير المتزامنة محفوظة داخل هذا الجهاز؛ لا تمسح بيانات المتصفح أو تحذف التطبيق قبل اكتمال المزامنة.
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/settings/page.tsx b/src/app/settings/page.tsx
+index 6c8523c..eb98f9f 100644
+--- a/src/app/settings/page.tsx
++++ b/src/app/settings/page.tsx
+@@ -1,6 +1,7 @@
+ import { headers } from "next/headers";
+ import { CopyField } from "@/components/copy-field";
+ import { ParserTester } from "@/components/forms/parser-tester";
++import { DataManagement } from "@/components/settings/data-management";
+ import { PageHeader, SectionCard } from "@/components/ui";
+ import { db } from "@/db/client";
+ import { apiTokens, parserRules } from "@/db/schema";
+@@ -239,13 +240,15 @@ export default async function SettingsPage() {
+         )}
+       </SectionCard>
+ 
+-      <SectionCard title="📤 تصدير البيانات" subtitle="نسخة احتياطية من كل العمليات">
+-        <div className="flex flex-wrap gap-2">
+-          <a href="/api/export?format=csv" className="btn-ghost">
+-            تحميل CSV
++      <SectionCard title="💾 إدارة البيانات" subtitle="احتفظ بنسخة من بياناتك أو امسح بيانات التجربة قبل ما تبدأ">
++        <DataManagement />
++        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-ink-700/50 pt-4">
++          <span className="text-xs text-ink-400">تصدير العمليات فقط:</span>
++          <a href="/api/export?format=csv" className="btn-ghost !px-3 !py-1.5 !text-xs">
++            CSV
+           </a>
+-          <a href="/api/export?format=json" className="btn-ghost">
+-            تحميل JSON
++          <a href="/api/export?format=json" className="btn-ghost !px-3 !py-1.5 !text-xs">
++            JSON
+           </a>
+         </div>
+       </SectionCard>
+diff --git a/src/app/transactions/page.tsx b/src/app/transactions/page.tsx
+index e65f560..5dab36b 100644
+--- a/src/app/transactions/page.tsx
++++ b/src/app/transactions/page.tsx
+@@ -40,7 +40,11 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
+ 
+   return (
+     <div className="animate-rise space-y-6">
+-      <PageHeader title="العمليات" subtitle="كل الحركات على بطاقاتك — من الرسائل أو يدوي" />
++      <PageHeader
++        title="العمليات"
++        subtitle="كل الحركات على بطاقاتك — من الرسائل أو يدوي"
++        action={<Link href="/offline#voice-expense" className="btn-primary">🎙️ إضافة بالصوت</Link>}
++      />
+ 
+       <Suspense fallback={null}>
+         <CollapsiblePanel label="عملية جديدة" openLabel="＋ تسجيل عملية يدوية" defaultOpenParam="new">
+diff --git a/src/components/app-shell.tsx b/src/components/app-shell.tsx
+index 77af6c8..3162ba0 100644
+--- a/src/components/app-shell.tsx
++++ b/src/components/app-shell.tsx
+@@ -1,5 +1,6 @@
+ import Link from "next/link";
+ import { NavLinks } from "./nav-links";
++import { PwaProvider } from "./pwa-provider";
+ 
+ export function AppShell({ children }: { children: React.ReactNode }) {
+   return (
+@@ -22,7 +23,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
+         </div>
+       </aside>
+ 
+-      <main className="min-w-0 flex-1">{children}</main>
++      <main className="min-w-0 flex-1">
++        <PwaProvider />
++        {children}
++      </main>
+ 
+       <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-ink-700/70 bg-ink-950/95 px-2 py-2 backdrop-blur lg:hidden">
+         <NavLinks variant="bottom" />
+diff --git a/src/components/nav-links.tsx b/src/components/nav-links.tsx
+index aa5366e..8257757 100644
+--- a/src/components/nav-links.tsx
++++ b/src/components/nav-links.tsx
+@@ -8,6 +8,7 @@ const LINKS = [
+   { href: "/cards", label: "البطاقات", icon: "💳" },
+   { href: "/transactions", label: "العمليات", icon: "🧾" },
+   { href: "/messages", label: "رسائل البنك", icon: "📨" },
++  { href: "/offline", label: "أوفلاين", icon: "📱" },
+   { href: "/settings", label: "الإعدادات", icon: "⚙️" },
+ ];
+ 
+diff --git a/src/components/offline/offline-center.tsx b/src/components/offline/offline-center.tsx
+new file mode 100644
+index 0000000..6675be8
+--- /dev/null
++++ b/src/components/offline/offline-center.tsx
+@@ -0,0 +1,322 @@
++"use client";
++
++import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
++import { VoiceExpense } from "@/components/offline/voice-expense";
++import { BANK_OPTIONS } from "@/lib/sms/banks";
++import { parseSms } from "@/lib/sms/parse";
++import { TX_TYPES, TX_TYPE_LABELS, type TxType } from "@/lib/sms/types";
++import {
++  getSnapshot,
++  listOperations,
++  queueOperation,
++  removeOperations,
++  saveSnapshot,
++  type OfflineOperation,
++} from "@/lib/offline-store";
++
++type OfflineCard = {
++  id: string;
++  name: string;
++  last4: string;
++  bankKey: string;
++  type: "CREDIT" | "DEBIT" | "PREPAID";
++  currency: string;
++};
++
++type SyncResponse = { results: { id: string; ok: boolean; error?: string }[] };
++
++const kindLabel = { card: "بطاقة", transaction: "عملية", message: "رسالة بنك" } as const;
++
++function localDateTimeValue(date = new Date()) {
++  const pad = (value: number) => String(value).padStart(2, "0");
++  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
++}
++
++async function askForBackgroundSync() {
++  const registration = await navigator.serviceWorker?.ready;
++  const sync = (registration as ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } })?.sync;
++  await sync?.register("masareefy-outbox").catch(() => undefined);
++}
++
++export function OfflineCenter() {
++  const [online, setOnline] = useState(true);
++  const [pending, setPending] = useState<OfflineOperation[]>([]);
++  const [cards, setCards] = useState<OfflineCard[]>([]);
++  const [busy, setBusy] = useState(false);
++  const [notice, setNotice] = useState("");
++  const [messagePreview, setMessagePreview] = useState<ReturnType<typeof parseSms> | null>(null);
++
++  const refreshLocal = useCallback(async () => {
++    const [operations, cachedCards] = await Promise.all([
++      listOperations(),
++      getSnapshot<OfflineCard[]>("cards"),
++    ]);
++    setPending(operations.sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
++    if (cachedCards) setCards(cachedCards);
++  }, []);
++
++  const refreshServerData = useCallback(async () => {
++    const response = await fetch("/api/offline", { cache: "no-store" });
++    if (!response.ok) throw new Error("تعذر تنزيل البيانات");
++    const data = (await response.json()) as { cards: OfflineCard[] };
++    const queuedCards = (await listOperations())
++      .filter((item) => item.kind === "card")
++      .map((item) => item.payload as unknown as OfflineCard);
++    const merged = [...data.cards];
++    for (const card of queuedCards) if (!merged.some((item) => item.id === card.id)) merged.push(card);
++    setCards(merged);
++    await saveSnapshot("cards", merged);
++  }, []);
++
++  const sync = useCallback(async () => {
++    if (!navigator.onLine) return;
++    const operations = await listOperations();
++    if (!operations.length) {
++      await refreshServerData().catch(() => undefined);
++      return;
++    }
++
++    setBusy(true);
++    setNotice("جاري مزامنة البيانات…");
++    try {
++      const response = await fetch("/api/offline", {
++        method: "POST",
++        headers: { "content-type": "application/json" },
++        body: JSON.stringify({ operations }),
++      });
++      if (!response.ok) throw new Error("فشلت المزامنة");
++      const data = (await response.json()) as SyncResponse;
++      const completed = data.results.filter((item) => item.ok).map((item) => item.id);
++      await removeOperations(completed);
++      await refreshLocal();
++      await refreshServerData();
++      const failed = data.results.length - completed.length;
++      setNotice(failed ? `تمت مزامنة ${completed.length}، وتعذر رفع ${failed}.` : "تمت مزامنة كل البيانات ✅");
++    } catch {
++      setNotice("البيانات محفوظة على الجهاز وهتتزامن تلقائيًا عند رجوع الاتصال.");
++      await askForBackgroundSync();
++    } finally {
++      setBusy(false);
++    }
++  }, [refreshLocal, refreshServerData]);
++
++  useEffect(() => {
++    queueMicrotask(() => {
++      setOnline(navigator.onLine);
++      void refreshLocal();
++      if (navigator.onLine) void sync();
++    });
++
++    const wentOnline = () => {
++      setOnline(true);
++      void sync();
++    };
++    const wentOffline = () => setOnline(false);
++    const workerMessage = (event: MessageEvent) => {
++      if (event.data?.type === "OUTBOX_SYNCED") void refreshLocal();
++    };
++    window.addEventListener("online", wentOnline);
++    window.addEventListener("offline", wentOffline);
++    navigator.serviceWorker?.addEventListener("message", workerMessage);
++    return () => {
++      window.removeEventListener("online", wentOnline);
++      window.removeEventListener("offline", wentOffline);
++      navigator.serviceWorker?.removeEventListener("message", workerMessage);
++    };
++  }, [refreshLocal, sync]);
++
++  const enqueue = async (operation: OfflineOperation) => {
++    await queueOperation(operation);
++    await refreshLocal();
++    setNotice(online ? "اتحفظت على الجهاز وجاري المزامنة…" : "اتحفظت على الجهاز وهتترفع لما الإنترنت يرجع ✅");
++    await askForBackgroundSync();
++    if (online) await sync();
++  };
++
++  const pendingCounts = useMemo(
++    () => ({
++      card: pending.filter((item) => item.kind === "card").length,
++      transaction: pending.filter((item) => item.kind === "transaction").length,
++      message: pending.filter((item) => item.kind === "message").length,
++    }),
++    [pending],
++  );
++
++  const addCard = async (event: FormEvent<HTMLFormElement>) => {
++    event.preventDefault();
++    const form = event.currentTarget;
++    const data = new FormData(form);
++    const card: OfflineCard & { openingBalance: number } = {
++      id: crypto.randomUUID(),
++      name: String(data.get("name") ?? "").trim(),
++      last4: String(data.get("last4") ?? "").trim(),
++      bankKey: String(data.get("bankKey") ?? "generic"),
++      type: String(data.get("type") ?? "CREDIT") as OfflineCard["type"],
++      currency: "EGP",
++      openingBalance: Number(data.get("openingBalance")) || 0,
++    };
++    if (card.name.length < 2 || !/^\d{4}$/.test(card.last4)) {
++      setNotice("اكتب اسم البطاقة وآخر 4 أرقام بشكل صحيح.");
++      return;
++    }
++    const updated = [...cards, card];
++    setCards(updated);
++    await saveSnapshot("cards", updated);
++    form.reset();
++    await enqueue({ id: crypto.randomUUID(), kind: "card", createdAt: new Date().toISOString(), payload: card });
++  };
++
++  const addTransaction = async (event: FormEvent<HTMLFormElement>) => {
++    event.preventDefault();
++    const form = event.currentTarget;
++    const data = new FormData(form);
++    const amount = Number(String(data.get("amount") ?? "").replace(/,/g, ""));
++    const cardId = String(data.get("cardId") ?? "");
++    if (!cardId || !Number.isFinite(amount) || amount <= 0) {
++      setNotice("اختر البطاقة واكتب مبلغًا صحيحًا.");
++      return;
++    }
++    const payload = {
++      id: crypto.randomUUID(),
++      cardId,
++      amount,
++      type: String(data.get("type") ?? "PURCHASE"),
++      merchant: String(data.get("merchant") ?? "").trim() || null,
++      note: String(data.get("note") ?? "").trim() || null,
++      occurredAt: new Date(String(data.get("occurredAt") ?? new Date().toISOString())).toISOString(),
++    };
++    form.reset();
++    await enqueue({ id: crypto.randomUUID(), kind: "transaction", createdAt: new Date().toISOString(), payload });
++  };
++
++  const addVoiceTransaction = async (payload: {
++    id: string;
++    cardId: string;
++    amount: number;
++    type: string;
++    merchant: string | null;
++    note: string;
++    occurredAt: string;
++  }) => {
++    await enqueue({
++      id: crypto.randomUUID(),
++      kind: "transaction",
++      createdAt: new Date().toISOString(),
++      payload,
++    });
++  };
++
++  const addMessage = async (event: FormEvent<HTMLFormElement>) => {
++    event.preventDefault();
++    const form = event.currentTarget;
++    const data = new FormData(form);
++    const text = String(data.get("text") ?? "").trim();
++    const sender = String(data.get("sender") ?? "").trim() || null;
++    if (text.length < 5) {
++      setNotice("الصق نص رسالة البنك الأول.");
++      return;
++    }
++    const preview = parseSms(text, { sender, receivedAt: new Date() });
++    setMessagePreview(preview);
++    const payload = {
++      text,
++      sender,
++      cardId: String(data.get("cardId") ?? "") || null,
++      receivedAt: new Date().toISOString(),
++    };
++    form.reset();
++    await enqueue({ id: crypto.randomUUID(), kind: "message", createdAt: new Date().toISOString(), payload });
++  };
++
++  return (
++    <div className="space-y-5">
++      <div className={`rounded-2xl border p-4 ${online ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}>
++        <div className="flex flex-wrap items-center justify-between gap-3">
++          <div>
++            <p className="font-bold">{online ? "● متصل بالإنترنت" : "● وضع أوفلاين"}</p>
++            <p className="mt-1 text-xs text-ink-300">
++              {pending.length ? `${pending.length} عنصر محفوظ على الجهاز في انتظار المزامنة.` : "كل البيانات متزامنة."}
++            </p>
++          </div>
++          <button type="button" className="btn-ghost" onClick={() => void sync()} disabled={!online || busy}>
++            {busy ? "جاري المزامنة…" : "↻ مزامنة الآن"}
++          </button>
++        </div>
++        {notice ? <p className="mt-3 text-xs font-semibold text-ink-50" role="status">{notice}</p> : null}
++      </div>
++
++      <VoiceExpense cards={cards} onSave={addVoiceTransaction} />
++
++      <div className="grid gap-4 xl:grid-cols-3">
++        <form onSubmit={addMessage} className="surface space-y-3 p-4">
++          <div className="flex items-center justify-between"><h2 className="font-bold">📨 رسالة بنك</h2><Badge count={pendingCounts.message} /></div>
++          <textarea name="text" rows={6} className="field" placeholder="الصق رسالة البنك هنا…" required />
++          <div className="grid grid-cols-2 gap-2">
++            <input name="sender" className="field" placeholder="المرسل (اختياري)" />
++            <select name="cardId" className="field" defaultValue="">
++              <option value="">البطاقة تلقائيًا</option>
++              {cards.map((card) => <option key={card.id} value={card.id}>{card.name} •••• {card.last4}</option>)}
++            </select>
++          </div>
++          <button className="btn-primary w-full" type="submit">تحليل وحفظ محلي</button>
++          {messagePreview ? (
++            <p className="rounded-xl bg-ink-950/60 p-3 text-xs text-ink-300">
++              آخر تحليل: {messagePreview.amount ?? "مبلغ غير معروف"} {messagePreview.currency ?? ""} · {TX_TYPE_LABELS[messagePreview.type]}
++            </p>
++          ) : null}
++        </form>
++
++        <form onSubmit={addTransaction} className="surface space-y-3 p-4">
++          <div className="flex items-center justify-between"><h2 className="font-bold">🧾 عملية يدوية</h2><Badge count={pendingCounts.transaction} /></div>
++          <select name="cardId" className="field" defaultValue="" required>
++            <option value="" disabled>اختر البطاقة</option>
++            {cards.map((card) => <option key={card.id} value={card.id}>{card.name} •••• {card.last4}</option>)}
++          </select>
++          <div className="grid grid-cols-2 gap-2">
++            <input name="amount" inputMode="decimal" className="field" placeholder="المبلغ" required />
++            <select name="type" className="field" defaultValue="PURCHASE">
++              {TX_TYPES.filter((type) => type !== "UNKNOWN").map((type) => <option key={type} value={type}>{TX_TYPE_LABELS[type as TxType]}</option>)}
++            </select>
++          </div>
++          <input name="merchant" className="field" placeholder="التاجر / البيان" />
++          <input name="occurredAt" type="datetime-local" className="field" defaultValue={localDateTimeValue()} />
++          <input name="note" className="field" placeholder="ملاحظة اختيارية" />
++          <button className="btn-primary w-full" type="submit" disabled={!cards.length}>حفظ العملية محليًا</button>
++          {!cards.length ? <p className="text-xs text-amber-300">أضف بطاقة أولًا من النموذج التالي.</p> : null}
++        </form>
++
++        <form onSubmit={addCard} className="surface space-y-3 p-4">
++          <div className="flex items-center justify-between"><h2 className="font-bold">💳 بطاقة جديدة</h2><Badge count={pendingCounts.card} /></div>
++          <input name="name" className="field" placeholder="اسم البطاقة" required />
++          <input name="last4" inputMode="numeric" maxLength={4} pattern="[0-9]{4}" className="field" placeholder="آخر 4 أرقام" required />
++          <select name="bankKey" className="field" defaultValue="cib">
++            {BANK_OPTIONS.map((bank) => <option key={bank.value} value={bank.value}>{bank.label}</option>)}
++          </select>
++          <select name="type" className="field" defaultValue="CREDIT">
++            <option value="CREDIT">ائتمانية</option><option value="DEBIT">خصم مباشر</option><option value="PREPAID">مسبقة الدفع</option>
++          </select>
++          <input name="openingBalance" inputMode="decimal" className="field" placeholder="الرصيد الافتتاحي (اختياري)" />
++          <button className="btn-primary w-full" type="submit">حفظ البطاقة محليًا</button>
++        </form>
++      </div>
++
++      {pending.length ? (
++        <div className="surface p-4">
++          <h2 className="text-sm font-bold">المحفوظ على الجهاز</h2>
++          <ul className="mt-3 divide-y divide-ink-700/50 text-xs">
++            {pending.map((item) => (
++              <li key={item.id} className="flex items-center justify-between gap-3 py-2">
++                <span>{kindLabel[item.kind]}</span>
++                <time className="text-ink-400">{new Date(item.createdAt).toLocaleString("ar-EG", { dateStyle: "short", timeStyle: "short" })}</time>
++              </li>
++            ))}
++          </ul>
++        </div>
++      ) : null}
++    </div>
++  );
++}
++
++function Badge({ count }: { count: number }) {
++  return count ? <span className="rounded-full bg-amber-500/15 px-2 py-1 text-[10px] font-bold text-amber-300">{count} معلّق</span> : null;
++}
+diff --git a/src/components/offline/voice-expense.tsx b/src/components/offline/voice-expense.tsx
+new file mode 100644
+index 0000000..aff6336
+--- /dev/null
++++ b/src/components/offline/voice-expense.tsx
+@@ -0,0 +1,236 @@
++"use client";
++
++import { useRef, useState } from "react";
++import { TX_TYPES, TX_TYPE_LABELS, type TxType } from "@/lib/sms/types";
++import { parseVoiceExpense, type VoiceCard, type VoiceExpenseDraft } from "@/lib/voice-expense";
++
++type SpeechResultEvent = {
++  resultIndex: number;
++  results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>;
++};
++
++type SpeechErrorEvent = { error: string };
++
++type SpeechRecognitionLike = {
++  lang: string;
++  continuous: boolean;
++  interimResults: boolean;
++  maxAlternatives: number;
++  onresult: ((event: SpeechResultEvent) => void) | null;
++  onerror: ((event: SpeechErrorEvent) => void) | null;
++  onend: (() => void) | null;
++  start(): void;
++  stop(): void;
++};
++
++type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
++
++type VoiceTransaction = {
++  id: string;
++  cardId: string;
++  amount: number;
++  type: string;
++  merchant: string | null;
++  note: string;
++  occurredAt: string;
++};
++
++const emptyDraft: VoiceExpenseDraft = {
++  transcript: "",
++  amount: null,
++  cardId: "",
++  type: "PURCHASE",
++  merchant: "",
++};
++
++export function VoiceExpense({
++  cards,
++  onSave,
++}: {
++  cards: VoiceCard[];
++  onSave: (transaction: VoiceTransaction) => Promise<void>;
++}) {
++  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
++  const [draft, setDraft] = useState<VoiceExpenseDraft>(emptyDraft);
++  const [listening, setListening] = useState(false);
++  const [saving, setSaving] = useState(false);
++  const [message, setMessage] = useState("");
++
++  const analyze = (transcript: string) => {
++    setDraft(parseVoiceExpense(transcript, cards));
++    setMessage("");
++  };
++
++  const startListening = () => {
++    const speechWindow = window as typeof window & {
++      SpeechRecognition?: SpeechRecognitionConstructor;
++      webkitSpeechRecognition?: SpeechRecognitionConstructor;
++    };
++    const Constructor = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
++    if (!Constructor) {
++      setMessage("المتصفح ده مش بيدعم التعرف على الصوت. جرّب Chrome على Android أو اكتب الجملة يدويًا.");
++      return;
++    }
++
++    recognitionRef.current?.stop();
++    const recognition = new Constructor();
++    recognition.lang = "ar-EG";
++    recognition.continuous = false;
++    recognition.interimResults = true;
++    recognition.maxAlternatives = 1;
++    recognition.onresult = (event) => {
++      let transcript = "";
++      for (let index = 0; index < event.results.length; index += 1) {
++        transcript += `${event.results[index][0]?.transcript ?? ""} `;
++      }
++      analyze(transcript.trim());
++    };
++    recognition.onerror = (event) => {
++      const errors: Record<string, string> = {
++        "not-allowed": "اسمح للتطبيق باستخدام الميكروفون من إعدادات المتصفح.",
++        "audio-capture": "مش قادر أوصل للميكروفون.",
++        "no-speech": "مسمعتش كلام واضح. جرّب مرة تانية.",
++        network: "خدمة التعرف على الصوت محتاجة إنترنت على الجهاز ده.",
++      };
++      setMessage(errors[event.error] ?? "تعذر التعرف على الصوت. جرّب مرة تانية.");
++      setListening(false);
++    };
++    recognition.onend = () => setListening(false);
++    recognitionRef.current = recognition;
++
++    try {
++      recognition.start();
++      setListening(true);
++      setMessage("اتكلم دلوقتي… مثال: دفعت ٢٥٠ جنيه في كارفور على فيزا CIB");
++    } catch {
++      setMessage("الميكروفون مشغول. استنى لحظة وجرّب تاني.");
++      setListening(false);
++    }
++  };
++
++  const stopListening = () => {
++    recognitionRef.current?.stop();
++    setListening(false);
++  };
++
++  const save = async () => {
++    if (!draft.cardId) {
++      setMessage("حدد البطاقة قبل الحفظ.");
++      return;
++    }
++    if (draft.amount === null || !Number.isFinite(draft.amount) || draft.amount <= 0) {
++      setMessage("راجع المبلغ قبل الحفظ.");
++      return;
++    }
++
++    setSaving(true);
++    try {
++      await onSave({
++        id: crypto.randomUUID(),
++        cardId: draft.cardId,
++        amount: draft.amount,
++        type: draft.type,
++        merchant: draft.merchant || null,
++        note: `إدخال صوتي: ${draft.transcript}`,
++        occurredAt: new Date().toISOString(),
++      });
++      setDraft(emptyDraft);
++      setMessage("تم حفظ المصروف الصوتي ✅");
++    } finally {
++      setSaving(false);
++    }
++  };
++
++  return (
++    <section id="voice-expense" className="surface scroll-mt-4 overflow-hidden border-brand-500/25 p-4 sm:p-5">
++      <div className="flex flex-wrap items-start justify-between gap-3">
++        <div>
++          <h2 className="font-bold">🎙️ إضافة مصروف بالصوت</h2>
++          <p className="mt-1 text-xs text-ink-400">قول المبلغ والتاجر والبطاقة، وراجع النتيجة قبل الحفظ.</p>
++        </div>
++        <button
++          type="button"
++          onClick={listening ? stopListening : startListening}
++          className={`grid h-14 w-14 place-items-center rounded-full text-2xl shadow-lg transition ${
++            listening
++              ? "animate-pulse bg-rose-500 text-white shadow-rose-500/30"
++              : "bg-gradient-to-br from-brand-400 to-brand-600 text-ink-950 shadow-brand-500/30"
++          }`}
++          aria-label={listening ? "إيقاف الاستماع" : "بدء التسجيل الصوتي"}
++        >
++          {listening ? "■" : "🎙️"}
++        </button>
++      </div>
++
++      <div className="mt-4">
++        <label className="field-label" htmlFor="voice-transcript">الكلام اللي اتسمع</label>
++        <textarea
++          id="voice-transcript"
++          rows={2}
++          className="field"
++          value={draft.transcript}
++          onChange={(event) => analyze(event.target.value)}
++          placeholder="مثال: دفعت ٢٥٠ جنيه في كارفور على فيزا CIB"
++        />
++      </div>
++
++      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
++        <div>
++          <label className="field-label" htmlFor="voice-amount">المبلغ</label>
++          <input
++            id="voice-amount"
++            inputMode="decimal"
++            className="field"
++            value={draft.amount ?? ""}
++            onChange={(event) => setDraft((current) => ({ ...current, amount: Number(event.target.value) || null }))}
++            placeholder="250"
++          />
++        </div>
++        <div>
++          <label className="field-label" htmlFor="voice-card">البطاقة</label>
++          <select
++            id="voice-card"
++            className="field"
++            value={draft.cardId}
++            onChange={(event) => setDraft((current) => ({ ...current, cardId: event.target.value }))}
++          >
++            <option value="">اختر البطاقة</option>
++            {cards.map((card) => <option key={card.id} value={card.id}>{card.name} •••• {card.last4}</option>)}
++          </select>
++        </div>
++        <div>
++          <label className="field-label" htmlFor="voice-type">النوع</label>
++          <select
++            id="voice-type"
++            className="field"
++            value={draft.type}
++            onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value as TxType }))}
++          >
++            {TX_TYPES.filter((type) => type !== "UNKNOWN").map((type) => <option key={type} value={type}>{TX_TYPE_LABELS[type]}</option>)}
++          </select>
++        </div>
++        <div>
++          <label className="field-label" htmlFor="voice-merchant">التاجر</label>
++          <input
++            id="voice-merchant"
++            className="field"
++            value={draft.merchant}
++            onChange={(event) => setDraft((current) => ({ ...current, merchant: event.target.value }))}
++            placeholder="كارفور"
++          />
++        </div>
++      </div>
++
++      <div className="mt-4 flex flex-wrap items-center gap-3">
++        <button type="button" className="btn-primary" onClick={() => void save()} disabled={saving || !cards.length}>
++          {saving ? "جاري الحفظ…" : "حفظ المصروف"}
++        </button>
++        {message ? <p className="text-xs font-semibold text-ink-300" role="status">{message}</p> : null}
++      </div>
++
++      <p className="mt-3 text-[11px] leading-relaxed text-amber-200/80">
++        حسب نوع الهاتف، المتصفح قد يستخدم خدمة صوت خارجية ويحتاج إنترنت. النص الناتج فقط هو اللي بيتحفظ في مصاريفي.
++      </p>
++    </section>
++  );
++}
+diff --git a/src/components/pwa-provider.tsx b/src/components/pwa-provider.tsx
+new file mode 100644
+index 0000000..b1c59bd
+--- /dev/null
++++ b/src/components/pwa-provider.tsx
+@@ -0,0 +1,52 @@
++"use client";
++
++import { useEffect, useState } from "react";
++
++type InstallPromptEvent = Event & {
++  prompt(): Promise<void>;
++  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
++};
++
++export function PwaProvider() {
++  const [online, setOnline] = useState(true);
++  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
++
++  useEffect(() => {
++    queueMicrotask(() => setOnline(navigator.onLine));
++    const onOnline = () => setOnline(true);
++    const onOffline = () => setOnline(false);
++    const onInstallPrompt = (event: Event) => {
++      event.preventDefault();
++      setInstallPrompt(event as InstallPromptEvent);
++    };
++    window.addEventListener("online", onOnline);
++    window.addEventListener("offline", onOffline);
++    window.addEventListener("beforeinstallprompt", onInstallPrompt);
++
++    if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
++      void navigator.serviceWorker.register("/sw.js", { scope: "/" });
++    }
++
++    return () => {
++      window.removeEventListener("online", onOnline);
++      window.removeEventListener("offline", onOffline);
++      window.removeEventListener("beforeinstallprompt", onInstallPrompt);
++    };
++  }, []);
++
++  const install = async () => {
++    if (!installPrompt) return;
++    await installPrompt.prompt();
++    const choice = await installPrompt.userChoice;
++    if (choice.outcome === "accepted") setInstallPrompt(null);
++  };
++
++  if (online && !installPrompt) return null;
++
++  return (
++    <div className={`mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-xs ${online ? "border-brand-500/30 bg-brand-500/10" : "border-amber-500/30 bg-amber-500/10"}`}>
++      <span className="font-semibold">{online ? "ثبّت مصاريفي على الموبايل واستخدمه كتطبيق" : "أنت أوفلاين — الإدخالات الجديدة هتتحفظ على الجهاز"}</span>
++      {installPrompt ? <button type="button" onClick={() => void install()} className="btn-primary !px-3 !py-1.5 !text-xs">تثبيت التطبيق</button> : <a href="/offline" className="font-bold text-amber-200">فتح وضع أوفلاين ←</a>}
++    </div>
++  );
++}
+diff --git a/src/components/settings/data-management.tsx b/src/components/settings/data-management.tsx
+new file mode 100644
+index 0000000..458a7a7
+--- /dev/null
++++ b/src/components/settings/data-management.tsx
+@@ -0,0 +1,50 @@
++"use client";
++
++import { useActionState } from "react";
++import { clearDemoDataAction, type ClearDemoDataState } from "@/server/actions/settings";
++
++const initialState: ClearDemoDataState = {};
++
++export function DataManagement() {
++  const [state, formAction, pending] = useActionState(clearDemoDataAction, initialState);
++
++  return (
++    <div className="grid gap-4 lg:grid-cols-2">
++      <div className="rounded-2xl border border-ink-700/60 bg-ink-950/40 p-4">
++        <h3 className="text-sm font-bold text-ink-50">نسخة احتياطية كاملة</h3>
++        <p className="mt-1 text-xs leading-relaxed text-ink-400">
++          حمّل ملف JSON فيه البطاقات والعمليات والرسائل والفئات والإعدادات وقواعد التحليل ومفاتيح الربط.
++        </p>
++        <a href="/api/export?format=backup" download className="btn-ghost mt-4 inline-flex">
++          ↓ تحميل نسخة احتياطية
++        </a>
++        <p className="mt-2 text-[11px] text-amber-300/80">احتفظ بالملف في مكان آمن لأنه يحتوي على مفاتيح الربط.</p>
++      </div>
++
++      <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-4">
++        <h3 className="text-sm font-bold text-rose-200">مسح البيانات التجريبية</h3>
++        <p className="mt-1 text-xs leading-relaxed text-ink-400">
++          يمسح كل البطاقات والعمليات والرسائل لتبدأ ببياناتك الحقيقية. لن يمسح الفئات أو الإعدادات أو مفاتيح الربط أو قواعد التحليل.
++        </p>
++        <form
++          action={formAction}
++          className="mt-4"
++          onSubmit={(event) => {
++            if (!window.confirm("متأكد إنك عايز تمسح كل البطاقات والعمليات والرسائل؟ لا يمكن التراجع عن الخطوة دي.")) {
++              event.preventDefault();
++            }
++          }}
++        >
++          <button type="submit" disabled={pending} className="rounded-xl border border-rose-500/40 px-4 py-2 text-sm font-bold text-rose-200 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50">
++            {pending ? "جاري المسح…" : "مسح البيانات التجريبية"}
++          </button>
++        </form>
++        {state.message ? (
++          <p className={`mt-3 text-xs font-semibold ${state.ok ? "text-emerald-300" : "text-rose-300"}`} role="status">
++            {state.message}
++          </p>
++        ) : null}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/db/client.ts b/src/db/client.ts
+index 05fe2b1..088007d 100644
+--- a/src/db/client.ts
++++ b/src/db/client.ts
+@@ -4,12 +4,14 @@ import { createClient, type Client } from "@libsql/client";
+ import { drizzle, type LibSQLDatabase } from "drizzle-orm/libsql";
+ import * as schema from "./schema";
+ 
+-const url = process.env.DATABASE_URL ?? "file:./data/masareefy.db";
++const url = process.env.DATABASE_URL ?? process.env.TURSO_DATABASE_URL ?? "file:./data/masareefy.db";
+ 
+ // لو قاعدة البيانات ملف محلي، نتأكد إن المجلد موجود قبل الاتصال
+ if (url.startsWith("file:")) {
+   const filePath = url.slice("file:".length).split("?")[0];
+-  const absolute = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
++  const absolute = path.isAbsolute(filePath)
++    ? filePath
++    : path.join(/* turbopackIgnore: true */ process.cwd(), filePath);
+   try {
+     mkdirSync(path.dirname(absolute), { recursive: true });
+   } catch {
+@@ -26,7 +28,7 @@ export const client: Client =
+   globalForDb.__masareefyClient ??
+   createClient({
+     url,
+-    authToken: process.env.DATABASE_AUTH_TOKEN,
++    authToken: process.env.DATABASE_AUTH_TOKEN ?? process.env.TURSO_AUTH_TOKEN,
+   });
+ 
+ export const db: LibSQLDatabase<typeof schema> = globalForDb.__masareefyDb ?? drizzle(client, { schema });
+diff --git a/src/lib/offline-store.ts b/src/lib/offline-store.ts
+new file mode 100644
+index 0000000..afe3fef
+--- /dev/null
++++ b/src/lib/offline-store.ts
+@@ -0,0 +1,73 @@
++export const OFFLINE_DB_NAME = "masareefy-offline";
++const OFFLINE_DB_VERSION = 1;
++const OUTBOX = "outbox";
++const SNAPSHOTS = "snapshots";
++
++export type OfflineOperation = {
++  id: string;
++  kind: "card" | "transaction" | "message";
++  createdAt: string;
++  payload: Record<string, unknown>;
++};
++
++function openDatabase(): Promise<IDBDatabase> {
++  return new Promise((resolve, reject) => {
++    const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
++    request.onupgradeneeded = () => {
++      const database = request.result;
++      if (!database.objectStoreNames.contains(OUTBOX)) database.createObjectStore(OUTBOX, { keyPath: "id" });
++      if (!database.objectStoreNames.contains(SNAPSHOTS)) database.createObjectStore(SNAPSHOTS, { keyPath: "key" });
++    };
++    request.onsuccess = () => resolve(request.result);
++    request.onerror = () => reject(request.error);
++  });
++}
++
++export async function queueOperation(operation: OfflineOperation): Promise<void> {
++  const database = await openDatabase();
++  await new Promise<void>((resolve, reject) => {
++    const transaction = database.transaction(OUTBOX, "readwrite");
++    transaction.objectStore(OUTBOX).put(operation);
++    transaction.oncomplete = () => resolve();
++    transaction.onerror = () => reject(transaction.error);
++  });
++}
++
++export async function listOperations(): Promise<OfflineOperation[]> {
++  const database = await openDatabase();
++  return new Promise((resolve, reject) => {
++    const request = database.transaction(OUTBOX, "readonly").objectStore(OUTBOX).getAll();
++    request.onsuccess = () => resolve(request.result as OfflineOperation[]);
++    request.onerror = () => reject(request.error);
++  });
++}
++
++export async function removeOperations(ids: string[]): Promise<void> {
++  const database = await openDatabase();
++  await new Promise<void>((resolve, reject) => {
++    const transaction = database.transaction(OUTBOX, "readwrite");
++    const store = transaction.objectStore(OUTBOX);
++    ids.forEach((id) => store.delete(id));
++    transaction.oncomplete = () => resolve();
++    transaction.onerror = () => reject(transaction.error);
++  });
++}
++
++export async function saveSnapshot<T>(key: string, value: T): Promise<void> {
++  const database = await openDatabase();
++  await new Promise<void>((resolve, reject) => {
++    const transaction = database.transaction(SNAPSHOTS, "readwrite");
++    transaction.objectStore(SNAPSHOTS).put({ key, value, savedAt: new Date().toISOString() });
++    transaction.oncomplete = () => resolve();
++    transaction.onerror = () => reject(transaction.error);
++  });
++}
++
++export async function getSnapshot<T>(key: string): Promise<T | null> {
++  const database = await openDatabase();
++  return new Promise((resolve, reject) => {
++    const request = database.transaction(SNAPSHOTS, "readonly").objectStore(SNAPSHOTS).get(key);
++    request.onsuccess = () => resolve((request.result?.value as T | undefined) ?? null);
++    request.onerror = () => reject(request.error);
++  });
++}
+diff --git a/src/lib/voice-expense.ts b/src/lib/voice-expense.ts
+new file mode 100644
+index 0000000..a587dcc
+--- /dev/null
++++ b/src/lib/voice-expense.ts
+@@ -0,0 +1,179 @@
++import { toEnglishDigits } from "@/lib/sms/normalize";
++import type { TxType } from "@/lib/sms/types";
++
++export type VoiceCard = {
++  id: string;
++  name: string;
++  last4: string;
++  bankKey: string;
++};
++
++export type VoiceExpenseDraft = {
++  transcript: string;
++  amount: number | null;
++  cardId: string;
++  type: TxType;
++  merchant: string;
++};
++
++const NUMBER_WORDS: Record<string, number> = {
++  صفر: 0,
++  واحد: 1,
++  واحده: 1,
++  اتنين: 2,
++  اثنين: 2,
++  اثنان: 2,
++  تلاته: 3,
++  ثلاثه: 3,
++  اربعه: 4,
++  خمسه: 5,
++  سته: 6,
++  سبعه: 7,
++  تمانيه: 8,
++  ثمانيه: 8,
++  تسعه: 9,
++  عشره: 10,
++  حداشر: 11,
++  احداشر: 11,
++  اتناشر: 12,
++  اثناشر: 12,
++  تلتاشر: 13,
++  تلاتاشر: 13,
++  اربعتاشر: 14,
++  خمستاشر: 15,
++  ستاشر: 16,
++  سبعتاشر: 17,
++  تمنتاشر: 18,
++  تسعتاشر: 19,
++  عشرين: 20,
++  تلاتين: 30,
++  ثلاثين: 30,
++  اربعين: 40,
++  خمسين: 50,
++  ستين: 60,
++  سبعين: 70,
++  تمانين: 80,
++  ثمانين: 80,
++  تسعين: 90,
++  ميه: 100,
++  مائه: 100,
++  ميتين: 200,
++  مئتين: 200,
++  تلتميه: 300,
++  ثلاثميه: 300,
++  ربعمية: 400,
++  اربعمية: 400,
++  خمسمية: 500,
++  ستمية: 600,
++  سبعمية: 700,
++  تمنمية: 800,
++  ثمانمية: 800,
++  تسعمية: 900,
++};
++
++function fold(input: string): string {
++  return toEnglishDigits(input)
++    .replace(/[أإآٱ]/g, "ا")
++    .replace(/ة/g, "ه")
++    .replace(/ى/g, "ي")
++    .replace(/[\u064b-\u0652]/g, "")
++    .toLowerCase()
++    .trim();
++}
++
++function wordValue(rawWord: string): number | null {
++  const word = fold(rawWord).replace(/^[,،.]+|[,،.]+$/g, "");
++  if (NUMBER_WORDS[word] !== undefined) return NUMBER_WORDS[word];
++  if (word.startsWith("و") && NUMBER_WORDS[word.slice(1)] !== undefined) return NUMBER_WORDS[word.slice(1)];
++  return null;
++}
++
++/** يحوّل الصياغات المصرية الشائعة مثل «ميتين وخمسين» و«ألف وتلتمية». */
++export function parseSpokenArabicNumber(input: string): number | null {
++  const words = fold(input).split(/\s+/).filter(Boolean);
++  let total = 0;
++  let group = 0;
++  let found = false;
++
++  for (const rawWord of words) {
++    const word = rawWord.replace(/^[,،.]+|[,،.]+$/g, "");
++    if (["الف", "الاف", "الفين"].includes(word) || ["والف", "والاف", "والفين"].includes(word)) {
++      const base = word.replace(/^و/, "");
++      group = group || (base === "الفين" ? 2 : 1);
++      total += group * 1000;
++      group = 0;
++      found = true;
++      continue;
++    }
++    const value = wordValue(word);
++    if (value !== null) {
++      group += value;
++      found = true;
++    }
++  }
++
++  return found ? total + group : null;
++}
++
++function extractAmount(text: string, card: VoiceCard | undefined): number | null {
++  const normalized = fold(text).replace(/٬/g, ",").replace(/٫/g, ".");
++  const withCurrency = /(?:^|\s)(\d+(?:[,.]\d{1,2})?)\s*(?:جنيه|جنية|جنيهات|ج\.?\s?م|egp|دولار|usd|ريال|sar)(?:\s|$)/i.exec(normalized);
++  if (withCurrency) return Number(withCurrency[1].replace(",", "."));
++
++  const currencyIndex = normalized.search(/(?:جنيه|جنية|جنيهات|دولار|ريال)/i);
++  if (currencyIndex > 0) {
++    const beforeCurrency = normalized.slice(0, currencyIndex).split(/\s+/).slice(-8).join(" ");
++    const spoken = parseSpokenArabicNumber(beforeCurrency);
++    if (spoken !== null && spoken > 0) return spoken;
++  }
++
++  const numbers = [...normalized.matchAll(/(?:^|\s)(\d+(?:[,.]\d{1,2})?)(?=\s|$)/g)]
++    .map((match) => match[1])
++    .filter((value) => value !== card?.last4);
++  const raw = numbers[0];
++  return raw ? Number(raw.replace(",", ".")) : null;
++}
++
++function detectType(text: string): TxType {
++  const value = fold(text);
++  if (/استرداد|مرتجع|رجعلي|ريفاند|refund/.test(value)) return "REFUND";
++  if (/سحب|atm|ماكينه/.test(value)) return "WITHDRAWAL";
++  if (/سداد|سددت|دفعت الكارت/.test(value)) return "PAYMENT";
++  if (/رسوم|عموله|مصاريف اداريه/.test(value)) return "FEE";
++  if (/مرتب|راتب|ايداع/.test(value)) return "DEPOSIT";
++  if (/تحويل.*(?:لي|وارد)|استلمت تحويل/.test(value)) return "TRANSFER_IN";
++  if (/حولت|تحويل.*(?:لـ|الي)|انستاباي/.test(value)) return "TRANSFER_OUT";
++  return "PURCHASE";
++}
++
++function matchCard(text: string, cards: VoiceCard[]): VoiceCard | undefined {
++  const value = fold(text);
++  const byLast4 = cards.find((card) => value.includes(card.last4));
++  if (byLast4) return byLast4;
++
++  const byName = [...cards]
++    .sort((a, b) => b.name.length - a.name.length)
++    .find((card) => value.includes(fold(card.name)));
++  if (byName) return byName;
++
++  const bankMatches = cards.filter((card) => card.bankKey !== "generic" && value.includes(fold(card.bankKey)));
++  return bankMatches.length === 1 ? bankMatches[0] : undefined;
++}
++
++function extractMerchant(text: string): string {
++  const normalized = toEnglishDigits(text).trim();
++  const match = /(?:\s|^)(?:في|عند|لدى|من عند)\s+(.+?)(?=\s+(?:على|بكارت|ببطاقه|ببطاقة|من كارت|من بطاقه|من بطاقة)(?:\s|$)|$)/iu.exec(normalized);
++  const merchant = match?.[1]?.replace(/[،,.]+$/g, "").trim() ?? "";
++  return /^(?:كارت|بطاق|فيزا|ماستر)/iu.test(merchant) ? "" : merchant.slice(0, 120);
++}
++
++export function parseVoiceExpense(transcript: string, cards: VoiceCard[]): VoiceExpenseDraft {
++  const card = matchCard(transcript, cards);
++  return {
++    transcript: transcript.trim(),
++    amount: extractAmount(transcript, card),
++    cardId: card?.id ?? (cards.length === 1 ? cards[0].id : ""),
++    type: detectType(transcript),
++    merchant: extractMerchant(transcript),
++  };
++}
+diff --git a/src/server/actions/settings.ts b/src/server/actions/settings.ts
+index 3d1036e..9dbbc44 100644
+--- a/src/server/actions/settings.ts
++++ b/src/server/actions/settings.ts
+@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
+ import { revalidatePath } from "next/cache";
+ import { eq } from "drizzle-orm";
+ import { db } from "@/db/client";
+-import { apiTokens, categories, parserRules } from "@/db/schema";
++import { apiTokens, cards, categories, messages, parserRules, transactions } from "@/db/schema";
+ import { DEFAULT_CATEGORIES } from "@/lib/default-categories";
+ 
+ export async function createCategoryAction(formData: FormData): Promise<void> {
+@@ -96,3 +96,36 @@ export async function deleteRuleAction(formData: FormData): Promise<void> {
+   if (id) await db.delete(parserRules).where(eq(parserRules.id, id));
+   revalidatePath("/settings");
+ }
++
++export type ClearDemoDataState = {
++  ok?: boolean;
++  message?: string;
++};
++
++/**
++ * يفرّغ بيانات الاستخدام التي ينشئها db:seed، مع الاحتفاظ بإعدادات التطبيق.
++ * حذف العمليات والرسائل صراحةً يجعل السلوك ثابتاً حتى لو اختلف إعداد foreign keys.
++ */
++export async function clearDemoDataAction(
++  previousState: ClearDemoDataState,
++): Promise<ClearDemoDataState> {
++  void previousState;
++  try {
++    await db.transaction(async (tx) => {
++      await tx.delete(transactions);
++      await tx.delete(messages);
++      await tx.delete(cards);
++    });
++
++    revalidatePath("/");
++    revalidatePath("/cards");
++    revalidatePath("/transactions");
++    revalidatePath("/messages");
++    revalidatePath("/settings");
++
++    return { ok: true, message: "تم مسح البطاقات والعمليات والرسائل بنجاح." };
++  } catch (error) {
++    console.error("Failed to clear demo data", error);
++    return { ok: false, message: "حصلت مشكلة أثناء المسح. جرّب مرة تانية." };
++  }
++}
+diff --git a/voice-expense.patch b/voice-expense.patch
+new file mode 100644
+index 0000000..517044c
+--- /dev/null
++++ b/voice-expense.patch
+@@ -0,0 +1,551 @@
++--- a/src/lib/voice-expense.ts
+++++ b/src/lib/voice-expense.ts
++@@ -0,0 +1,179 @@
+++import { toEnglishDigits } from "@/lib/sms/normalize";
+++import type { TxType } from "@/lib/sms/types";
+++
+++export type VoiceCard = {
+++  id: string;
+++  name: string;
+++  last4: string;
+++  bankKey: string;
+++};
+++
+++export type VoiceExpenseDraft = {
+++  transcript: string;
+++  amount: number | null;
+++  cardId: string;
+++  type: TxType;
+++  merchant: string;
+++};
+++
+++const NUMBER_WORDS: Record<string, number> = {
+++  صفر: 0,
+++  واحد: 1,
+++  واحده: 1,
+++  اتنين: 2,
+++  اثنين: 2,
+++  اثنان: 2,
+++  تلاته: 3,
+++  ثلاثه: 3,
+++  اربعه: 4,
+++  خمسه: 5,
+++  سته: 6,
+++  سبعه: 7,
+++  تمانيه: 8,
+++  ثمانيه: 8,
+++  تسعه: 9,
+++  عشره: 10,
+++  حداشر: 11,
+++  احداشر: 11,
+++  اتناشر: 12,
+++  اثناشر: 12,
+++  تلتاشر: 13,
+++  تلاتاشر: 13,
+++  اربعتاشر: 14,
+++  خمستاشر: 15,
+++  ستاشر: 16,
+++  سبعتاشر: 17,
+++  تمنتاشر: 18,
+++  تسعتاشر: 19,
+++  عشرين: 20,
+++  تلاتين: 30,
+++  ثلاثين: 30,
+++  اربعين: 40,
+++  خمسين: 50,
+++  ستين: 60,
+++  سبعين: 70,
+++  تمانين: 80,
+++  ثمانين: 80,
+++  تسعين: 90,
+++  ميه: 100,
+++  مائه: 100,
+++  ميتين: 200,
+++  مئتين: 200,
+++  تلتميه: 300,
+++  ثلاثميه: 300,
+++  ربعمية: 400,
+++  اربعمية: 400,
+++  خمسمية: 500,
+++  ستمية: 600,
+++  سبعمية: 700,
+++  تمنمية: 800,
+++  ثمانمية: 800,
+++  تسعمية: 900,
+++};
+++
+++function fold(input: string): string {
+++  return toEnglishDigits(input)
+++    .replace(/[أإآٱ]/g, "ا")
+++    .replace(/ة/g, "ه")
+++    .replace(/ى/g, "ي")
+++    .replace(/[\u064b-\u0652]/g, "")
+++    .toLowerCase()
+++    .trim();
+++}
+++
+++function wordValue(rawWord: string): number | null {
+++  const word = fold(rawWord).replace(/^[,،.]+|[,،.]+$/g, "");
+++  if (NUMBER_WORDS[word] !== undefined) return NUMBER_WORDS[word];
+++  if (word.startsWith("و") && NUMBER_WORDS[word.slice(1)] !== undefined) return NUMBER_WORDS[word.slice(1)];
+++  return null;
+++}
+++
+++/** يحوّل الصياغات المصرية الشائعة مثل «ميتين وخمسين» و«ألف وتلتمية». */
+++export function parseSpokenArabicNumber(input: string): number | null {
+++  const words = fold(input).split(/\s+/).filter(Boolean);
+++  let total = 0;
+++  let group = 0;
+++  let found = false;
+++
+++  for (const rawWord of words) {
+++    const word = rawWord.replace(/^[,،.]+|[,،.]+$/g, "");
+++    if (["الف", "الاف", "الفين"].includes(word) || ["والف", "والاف", "والفين"].includes(word)) {
+++      const base = word.replace(/^و/, "");
+++      group = group || (base === "الفين" ? 2 : 1);
+++      total += group * 1000;
+++      group = 0;
+++      found = true;
+++      continue;
+++    }
+++    const value = wordValue(word);
+++    if (value !== null) {
+++      group += value;
+++      found = true;
+++    }
+++  }
+++
+++  return found ? total + group : null;
+++}
+++
+++function extractAmount(text: string, card: VoiceCard | undefined): number | null {
+++  const normalized = fold(text).replace(/٬/g, ",").replace(/٫/g, ".");
+++  const withCurrency = /(?:^|\s)(\d+(?:[,.]\d{1,2})?)\s*(?:جنيه|جنية|جنيهات|ج\.?\s?م|egp|دولار|usd|ريال|sar)(?:\s|$)/i.exec(normalized);
+++  if (withCurrency) return Number(withCurrency[1].replace(",", "."));
+++
+++  const currencyIndex = normalized.search(/(?:جنيه|جنية|جنيهات|دولار|ريال)/i);
+++  if (currencyIndex > 0) {
+++    const beforeCurrency = normalized.slice(0, currencyIndex).split(/\s+/).slice(-8).join(" ");
+++    const spoken = parseSpokenArabicNumber(beforeCurrency);
+++    if (spoken !== null && spoken > 0) return spoken;
+++  }
+++
+++  const numbers = [...normalized.matchAll(/(?:^|\s)(\d+(?:[,.]\d{1,2})?)(?=\s|$)/g)]
+++    .map((match) => match[1])
+++    .filter((value) => value !== card?.last4);
+++  const raw = numbers[0];
+++  return raw ? Number(raw.replace(",", ".")) : null;
+++}
+++
+++function detectType(text: string): TxType {
+++  const value = fold(text);
+++  if (/استرداد|مرتجع|رجعلي|ريفاند|refund/.test(value)) return "REFUND";
+++  if (/سحب|atm|ماكينه/.test(value)) return "WITHDRAWAL";
+++  if (/سداد|سددت|دفعت الكارت/.test(value)) return "PAYMENT";
+++  if (/رسوم|عموله|مصاريف اداريه/.test(value)) return "FEE";
+++  if (/مرتب|راتب|ايداع/.test(value)) return "DEPOSIT";
+++  if (/تحويل.*(?:لي|وارد)|استلمت تحويل/.test(value)) return "TRANSFER_IN";
+++  if (/حولت|تحويل.*(?:لـ|الي)|انستاباي/.test(value)) return "TRANSFER_OUT";
+++  return "PURCHASE";
+++}
+++
+++function matchCard(text: string, cards: VoiceCard[]): VoiceCard | undefined {
+++  const value = fold(text);
+++  const byLast4 = cards.find((card) => value.includes(card.last4));
+++  if (byLast4) return byLast4;
+++
+++  const byName = [...cards]
+++    .sort((a, b) => b.name.length - a.name.length)
+++    .find((card) => value.includes(fold(card.name)));
+++  if (byName) return byName;
+++
+++  const bankMatches = cards.filter((card) => card.bankKey !== "generic" && value.includes(fold(card.bankKey)));
+++  return bankMatches.length === 1 ? bankMatches[0] : undefined;
+++}
+++
+++function extractMerchant(text: string): string {
+++  const normalized = toEnglishDigits(text).trim();
+++  const match = /(?:\s|^)(?:في|عند|لدى|من عند)\s+(.+?)(?=\s+(?:على|بكارت|ببطاقه|ببطاقة|من كارت|من بطاقه|من بطاقة)(?:\s|$)|$)/iu.exec(normalized);
+++  const merchant = match?.[1]?.replace(/[،,.]+$/g, "").trim() ?? "";
+++  return /^(?:كارت|بطاق|فيزا|ماستر)/iu.test(merchant) ? "" : merchant.slice(0, 120);
+++}
+++
+++export function parseVoiceExpense(transcript: string, cards: VoiceCard[]): VoiceExpenseDraft {
+++  const card = matchCard(transcript, cards);
+++  return {
+++    transcript: transcript.trim(),
+++    amount: extractAmount(transcript, card),
+++    cardId: card?.id ?? (cards.length === 1 ? cards[0].id : ""),
+++    type: detectType(transcript),
+++    merchant: extractMerchant(transcript),
+++  };
+++}
++--- a/src/components/offline/voice-expense.tsx
+++++ b/src/components/offline/voice-expense.tsx
++@@ -0,0 +1,236 @@
+++"use client";
+++
+++import { useRef, useState } from "react";
+++import { TX_TYPES, TX_TYPE_LABELS, type TxType } from "@/lib/sms/types";
+++import { parseVoiceExpense, type VoiceCard, type VoiceExpenseDraft } from "@/lib/voice-expense";
+++
+++type SpeechResultEvent = {
+++  resultIndex: number;
+++  results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>;
+++};
+++
+++type SpeechErrorEvent = { error: string };
+++
+++type SpeechRecognitionLike = {
+++  lang: string;
+++  continuous: boolean;
+++  interimResults: boolean;
+++  maxAlternatives: number;
+++  onresult: ((event: SpeechResultEvent) => void) | null;
+++  onerror: ((event: SpeechErrorEvent) => void) | null;
+++  onend: (() => void) | null;
+++  start(): void;
+++  stop(): void;
+++};
+++
+++type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+++
+++type VoiceTransaction = {
+++  id: string;
+++  cardId: string;
+++  amount: number;
+++  type: string;
+++  merchant: string | null;
+++  note: string;
+++  occurredAt: string;
+++};
+++
+++const emptyDraft: VoiceExpenseDraft = {
+++  transcript: "",
+++  amount: null,
+++  cardId: "",
+++  type: "PURCHASE",
+++  merchant: "",
+++};
+++
+++export function VoiceExpense({
+++  cards,
+++  onSave,
+++}: {
+++  cards: VoiceCard[];
+++  onSave: (transaction: VoiceTransaction) => Promise<void>;
+++}) {
+++  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+++  const [draft, setDraft] = useState<VoiceExpenseDraft>(emptyDraft);
+++  const [listening, setListening] = useState(false);
+++  const [saving, setSaving] = useState(false);
+++  const [message, setMessage] = useState("");
+++
+++  const analyze = (transcript: string) => {
+++    setDraft(parseVoiceExpense(transcript, cards));
+++    setMessage("");
+++  };
+++
+++  const startListening = () => {
+++    const speechWindow = window as typeof window & {
+++      SpeechRecognition?: SpeechRecognitionConstructor;
+++      webkitSpeechRecognition?: SpeechRecognitionConstructor;
+++    };
+++    const Constructor = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+++    if (!Constructor) {
+++      setMessage("المتصفح ده مش بيدعم التعرف على الصوت. جرّب Chrome على Android أو اكتب الجملة يدويًا.");
+++      return;
+++    }
+++
+++    recognitionRef.current?.stop();
+++    const recognition = new Constructor();
+++    recognition.lang = "ar-EG";
+++    recognition.continuous = false;
+++    recognition.interimResults = true;
+++    recognition.maxAlternatives = 1;
+++    recognition.onresult = (event) => {
+++      let transcript = "";
+++      for (let index = 0; index < event.results.length; index += 1) {
+++        transcript += `${event.results[index][0]?.transcript ?? ""} `;
+++      }
+++      analyze(transcript.trim());
+++    };
+++    recognition.onerror = (event) => {
+++      const errors: Record<string, string> = {
+++        "not-allowed": "اسمح للتطبيق باستخدام الميكروفون من إعدادات المتصفح.",
+++        "audio-capture": "مش قادر أوصل للميكروفون.",
+++        "no-speech": "مسمعتش كلام واضح. جرّب مرة تانية.",
+++        network: "خدمة التعرف على الصوت محتاجة إنترنت على الجهاز ده.",
+++      };
+++      setMessage(errors[event.error] ?? "تعذر التعرف على الصوت. جرّب مرة تانية.");
+++      setListening(false);
+++    };
+++    recognition.onend = () => setListening(false);
+++    recognitionRef.current = recognition;
+++
+++    try {
+++      recognition.start();
+++      setListening(true);
+++      setMessage("اتكلم دلوقتي… مثال: دفعت ٢٥٠ جنيه في كارفور على فيزا CIB");
+++    } catch {
+++      setMessage("الميكروفون مشغول. استنى لحظة وجرّب تاني.");
+++      setListening(false);
+++    }
+++  };
+++
+++  const stopListening = () => {
+++    recognitionRef.current?.stop();
+++    setListening(false);
+++  };
+++
+++  const save = async () => {
+++    if (!draft.cardId) {
+++      setMessage("حدد البطاقة قبل الحفظ.");
+++      return;
+++    }
+++    if (draft.amount === null || !Number.isFinite(draft.amount) || draft.amount <= 0) {
+++      setMessage("راجع المبلغ قبل الحفظ.");
+++      return;
+++    }
+++
+++    setSaving(true);
+++    try {
+++      await onSave({
+++        id: crypto.randomUUID(),
+++        cardId: draft.cardId,
+++        amount: draft.amount,
+++        type: draft.type,
+++        merchant: draft.merchant || null,
+++        note: `إدخال صوتي: ${draft.transcript}`,
+++        occurredAt: new Date().toISOString(),
+++      });
+++      setDraft(emptyDraft);
+++      setMessage("تم حفظ المصروف الصوتي ✅");
+++    } finally {
+++      setSaving(false);
+++    }
+++  };
+++
+++  return (
+++    <section id="voice-expense" className="surface scroll-mt-4 overflow-hidden border-brand-500/25 p-4 sm:p-5">
+++      <div className="flex flex-wrap items-start justify-between gap-3">
+++        <div>
+++          <h2 className="font-bold">🎙️ إضافة مصروف بالصوت</h2>
+++          <p className="mt-1 text-xs text-ink-400">قول المبلغ والتاجر والبطاقة، وراجع النتيجة قبل الحفظ.</p>
+++        </div>
+++        <button
+++          type="button"
+++          onClick={listening ? stopListening : startListening}
+++          className={`grid h-14 w-14 place-items-center rounded-full text-2xl shadow-lg transition ${
+++            listening
+++              ? "animate-pulse bg-rose-500 text-white shadow-rose-500/30"
+++              : "bg-gradient-to-br from-brand-400 to-brand-600 text-ink-950 shadow-brand-500/30"
+++          }`}
+++          aria-label={listening ? "إيقاف الاستماع" : "بدء التسجيل الصوتي"}
+++        >
+++          {listening ? "■" : "🎙️"}
+++        </button>
+++      </div>
+++
+++      <div className="mt-4">
+++        <label className="field-label" htmlFor="voice-transcript">الكلام اللي اتسمع</label>
+++        <textarea
+++          id="voice-transcript"
+++          rows={2}
+++          className="field"
+++          value={draft.transcript}
+++          onChange={(event) => analyze(event.target.value)}
+++          placeholder="مثال: دفعت ٢٥٠ جنيه في كارفور على فيزا CIB"
+++        />
+++      </div>
+++
+++      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+++        <div>
+++          <label className="field-label" htmlFor="voice-amount">المبلغ</label>
+++          <input
+++            id="voice-amount"
+++            inputMode="decimal"
+++            className="field"
+++            value={draft.amount ?? ""}
+++            onChange={(event) => setDraft((current) => ({ ...current, amount: Number(event.target.value) || null }))}
+++            placeholder="250"
+++          />
+++        </div>
+++        <div>
+++          <label className="field-label" htmlFor="voice-card">البطاقة</label>
+++          <select
+++            id="voice-card"
+++            className="field"
+++            value={draft.cardId}
+++            onChange={(event) => setDraft((current) => ({ ...current, cardId: event.target.value }))}
+++          >
+++            <option value="">اختر البطاقة</option>
+++            {cards.map((card) => <option key={card.id} value={card.id}>{card.name} •••• {card.last4}</option>)}
+++          </select>
+++        </div>
+++        <div>
+++          <label className="field-label" htmlFor="voice-type">النوع</label>
+++          <select
+++            id="voice-type"
+++            className="field"
+++            value={draft.type}
+++            onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value as TxType }))}
+++          >
+++            {TX_TYPES.filter((type) => type !== "UNKNOWN").map((type) => <option key={type} value={type}>{TX_TYPE_LABELS[type]}</option>)}
+++          </select>
+++        </div>
+++        <div>
+++          <label className="field-label" htmlFor="voice-merchant">التاجر</label>
+++          <input
+++            id="voice-merchant"
+++            className="field"
+++            value={draft.merchant}
+++            onChange={(event) => setDraft((current) => ({ ...current, merchant: event.target.value }))}
+++            placeholder="كارفور"
+++          />
+++        </div>
+++      </div>
+++
+++      <div className="mt-4 flex flex-wrap items-center gap-3">
+++        <button type="button" className="btn-primary" onClick={() => void save()} disabled={saving || !cards.length}>
+++          {saving ? "جاري الحفظ…" : "حفظ المصروف"}
+++        </button>
+++        {message ? <p className="text-xs font-semibold text-ink-300" role="status">{message}</p> : null}
+++      </div>
+++
+++      <p className="mt-3 text-[11px] leading-relaxed text-amber-200/80">
+++        حسب نوع الهاتف، المتصفح قد يستخدم خدمة صوت خارجية ويحتاج إنترنت. النص الناتج فقط هو اللي بيتحفظ في مصاريفي.
+++      </p>
+++    </section>
+++  );
+++}
++--- a/scripts/test-voice.ts
+++++ b/scripts/test-voice.ts
++@@ -0,0 +1,29 @@
+++import assert from "node:assert/strict";
+++import { parseSpokenArabicNumber, parseVoiceExpense, type VoiceCard } from "../src/lib/voice-expense";
+++
+++const cards: VoiceCard[] = [
+++  { id: "cib", name: "فيزا CIB الأساسية", last4: "4321", bankKey: "cib" },
+++  { id: "nbe", name: "ماستر الأهلي", last4: "7788", bankKey: "nbe" },
+++];
+++
+++assert.equal(parseSpokenArabicNumber("ميتين وخمسين"), 250);
+++assert.equal(parseSpokenArabicNumber("الف وتلتميه وخمسين"), 1350);
+++assert.equal(parseSpokenArabicNumber("اتنين الاف وميتين"), 2200);
+++
+++const purchase = parseVoiceExpense("دفعت ٢٥٠ جنيه في كارفور على فيزا CIB الأساسية", cards);
+++assert.equal(purchase.amount, 250);
+++assert.equal(purchase.merchant, "كارفور");
+++assert.equal(purchase.cardId, "cib");
+++assert.equal(purchase.type, "PURCHASE");
+++
+++const spoken = parseVoiceExpense("سجل ميتين وخمسين جنيه في طلبات على كارت 4321", cards);
+++assert.equal(spoken.amount, 250);
+++assert.equal(spoken.merchant, "طلبات");
+++assert.equal(spoken.cardId, "cib");
+++
+++const withdrawal = parseVoiceExpense("سحبت 1000 جنيه من ماكينة على ماستر الأهلي", cards);
+++assert.equal(withdrawal.amount, 1000);
+++assert.equal(withdrawal.cardId, "nbe");
+++assert.equal(withdrawal.type, "WITHDRAWAL");
+++
+++console.log("✅ نجحت اختبارات إدخال المصروفات بالصوت");
++--- a/src/components/offline/offline-center.tsx
+++++ b/src/components/offline/offline-center.tsx
++@@ -1,6 +1,7 @@
++ "use client";
++ 
++ import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+++import { VoiceExpense } from "@/components/offline/voice-expense";
++ import { BANK_OPTIONS } from "@/lib/sms/banks";
++ import { parseSms } from "@/lib/sms/parse";
++ import { TX_TYPES, TX_TYPE_LABELS, type TxType } from "@/lib/sms/types";
++@@ -188,6 +189,23 @@
++     await enqueue({ id: crypto.randomUUID(), kind: "transaction", createdAt: new Date().toISOString(), payload });
++   };
++ 
+++  const addVoiceTransaction = async (payload: {
+++    id: string;
+++    cardId: string;
+++    amount: number;
+++    type: string;
+++    merchant: string | null;
+++    note: string;
+++    occurredAt: string;
+++  }) => {
+++    await enqueue({
+++      id: crypto.randomUUID(),
+++      kind: "transaction",
+++      createdAt: new Date().toISOString(),
+++      payload,
+++    });
+++  };
+++
++   const addMessage = async (event: FormEvent<HTMLFormElement>) => {
++     event.preventDefault();
++     const form = event.currentTarget;
++@@ -226,6 +244,8 @@
++         </div>
++         {notice ? <p className="mt-3 text-xs font-semibold text-ink-50" role="status">{notice}</p> : null}
++       </div>
+++
+++      <VoiceExpense cards={cards} onSave={addVoiceTransaction} />
++ 
++       <div className="grid gap-4 xl:grid-cols-3">
++         <form onSubmit={addMessage} className="surface space-y-3 p-4">
++--- a/src/app/transactions/page.tsx
+++++ b/src/app/transactions/page.tsx
++@@ -40,7 +40,11 @@
++ 
++   return (
++     <div className="animate-rise space-y-6">
++-      <PageHeader title="العمليات" subtitle="كل الحركات على بطاقاتك — من الرسائل أو يدوي" />
+++      <PageHeader
+++        title="العمليات"
+++        subtitle="كل الحركات على بطاقاتك — من الرسائل أو يدوي"
+++        action={<Link href="/offline#voice-expense" className="btn-primary">🎙️ إضافة بالصوت</Link>}
+++      />
++ 
++       <Suspense fallback={null}>
++         <CollapsiblePanel label="عملية جديدة" openLabel="＋ تسجيل عملية يدوية" defaultOpenParam="new">
++--- a/public/sw.js
+++++ b/public/sw.js
++@@ -1,5 +1,5 @@
++-const CACHE_NAME = "masareefy-shell-v1";
++-const DATA_CACHE = "masareefy-pages-v1";
+++const CACHE_NAME = "masareefy-shell-v2";
+++const DATA_CACHE = "masareefy-pages-v2";
++ const OFFLINE_URL = "/offline";
++ const DB_NAME = "masareefy-offline";
++ const DB_VERSION = 1;
++--- a/package.json
+++++ b/package.json
++@@ -11,7 +11,8 @@
++     "db:migrate": "tsx scripts/migrate.ts",
++     "db:seed": "tsx scripts/seed.ts",
++     "db:studio": "drizzle-kit studio",
++-    "parser:test": "tsx scripts/test-parser.ts"
+++    "parser:test": "tsx scripts/test-parser.ts",
+++    "voice:test": "tsx scripts/test-voice.ts"
++   },
++   "dependencies": {
++     "@fontsource-variable/cairo": "^5.3.0",
++--- a/README.md
+++++ b/README.md
++@@ -20,6 +20,7 @@
++ | 🧪 **قواعد مخصّصة** | لو بنكك بيكتب صيغة غريبة، ضيف Regex من صفحة الإعدادات من غير ما تلمس الكود |
++ | 📤 **تصدير ونسخ احتياطي** | CSV / JSON للعمليات + نسخة JSON شاملة لبيانات التطبيق |
++ | 📱 **PWA أوفلاين** | يتثبت كتطبيق على الموبايل، ويحفظ البطاقات والعمليات ورسائل البنك محليًا ثم يزامنها تلقائيًا |
+++| 🎙️ **إضافة بالصوت** | يحوّل الكلام العربي المصري إلى مسودة مصروف ويستخرج المبلغ والتاجر والنوع والبطاقة قبل الحفظ |
++ 
++ ---
++ 
++@@ -46,6 +47,7 @@
++ | `npm run db:seed` | بيانات تجريبية |
++ | `npm run db:studio` | واجهة Drizzle Studio لاستعراض البيانات |
++ | `npm run parser:test` | اختبار محرّك تحليل الرسائل على عيّنات حقيقية |
+++| `npm run voice:test` | اختبار فهم أوامر المصروفات الصوتية بالعربي المصري |
++ 
++ ### متغيرات البيئة
++ 
