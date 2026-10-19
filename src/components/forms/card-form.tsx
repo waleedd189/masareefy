@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import type { Card } from "@/db/schema";
-import { CARD_BRANDS, CARD_COLORS, CARD_TYPES } from "@/lib/constants";
+import { ACCOUNT_TYPES, CARD_BRANDS, CARD_COLORS, CARD_DESIGNS, CARD_TYPES } from "@/lib/constants";
 import { BANK_OPTIONS } from "@/lib/sms/banks";
 import { CURRENCIES } from "@/lib/sms/currency";
 import { createCardAction, updateCardAction, type ActionState } from "@/server/actions/cards";
@@ -83,6 +83,20 @@ export function CardForm({ card }: { card?: Card }) {
         </div>
 
         <div>
+          <label className="field-label" htmlFor="accountType">
+            نوع الحساب
+          </label>
+          <select id="accountType" name="accountType" defaultValue={card?.accountType ?? ""} className="field">
+            <option value="">— مثل نوع البطاقة —</option>
+            {ACCOUNT_TYPES.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.emoji} {type.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
           <label className="field-label" htmlFor="currency">
             العملة
           </label>
@@ -138,7 +152,26 @@ export function CardForm({ card }: { card?: Card }) {
       </div>
 
       <div>
-        <span className="field-label">لون البطاقة</span>
+        <span className="field-label">تصميم/خلفية البطاقة</span>
+        <div className="mb-3 flex flex-wrap gap-2">
+          {CARD_DESIGNS.map((design) => (
+            <label key={design.value} className="cursor-pointer">
+              <input
+                type="radio"
+                name="design"
+                value={design.value}
+                defaultChecked={(card?.design ?? card?.color ?? "emerald") === design.value}
+                className="peer sr-only"
+              />
+              <span
+                className="block h-9 w-14 rounded-xl border-2 border-transparent transition peer-checked:border-white/90"
+                style={{ background: `linear-gradient(135deg, ${design.from}, ${design.to})` }}
+                title={design.label}
+              />
+            </label>
+          ))}
+        </div>
+        <span className="field-label">لون البطاقة (احتياطي)</span>
         <div className="flex flex-wrap gap-2">
           {CARD_COLORS.map((color) => (
             <label key={color.value} className="cursor-pointer">

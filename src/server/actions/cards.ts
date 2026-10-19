@@ -29,6 +29,10 @@ const cardSchema = z.object({
   statementDay: numberish,
   dueDay: numberish,
   color: z.string().trim().default("emerald"),
+  /** نوع الحساب الموسّع (بطاقة/محفظة/كاش/حساب…) — مقابل 19 نوع في Mezanetak */
+  accountType: z.string().trim().optional().nullable(),
+  /** خلفية البطاقة المختارة (26 تصميم في Mezanetak — إحنا 12) */
+  design: z.string().trim().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
 });
 
@@ -51,6 +55,8 @@ function parseForm(formData: FormData) {
     statementDay: String(formData.get("statementDay") ?? ""),
     dueDay: String(formData.get("dueDay") ?? ""),
     color: formData.get("color") ?? "emerald",
+    accountType: (formData.get("accountType") as string) || "",
+    design: (formData.get("design") as string) || "",
     notes: (formData.get("notes") as string) ?? "",
   });
 }
@@ -83,6 +89,8 @@ export async function createCardAction(_prev: ActionState, formData: FormData): 
       statementDay: data.statementDay ?? null,
       dueDay: data.dueDay ?? null,
       color: data.color,
+      accountType: data.accountType || "CARD",
+      design: data.design || data.color || "",
       notes: data.notes || null,
     })
     .returning();
@@ -116,6 +124,8 @@ export async function updateCardAction(_prev: ActionState, formData: FormData): 
       statementDay: data.statementDay ?? null,
       dueDay: data.dueDay ?? null,
       color: data.color,
+      accountType: data.accountType || "CARD",
+      design: data.design || data.color || "",
       notes: data.notes || null,
       updatedAt: new Date(),
     })

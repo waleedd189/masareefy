@@ -1,22 +1,34 @@
 import Link from "next/link";
 import { CardTile } from "@/components/card-tile";
+import { BudgetPanel, GoalsPanel, RemindersPanel, SignalsStrip } from "@/components/dashboard/insight-panels";
+import { HideBalancesToggle } from "@/components/dashboard/hide-balances";
 import { CategoryDonut, MonthlyBars } from "@/components/charts";
 import { TransactionList } from "@/components/transaction-list";
 import { EmptyState, PageHeader, SectionCard, StatCard } from "@/components/ui";
 import { formatMoney, monthLabel } from "@/lib/format";
 import { listCards, listTransactions } from "@/lib/services/queries";
 import { getDashboardData, isSpend, monthRange } from "@/lib/services/stats";
+import { getBudgetSummary } from "@/lib/services/budgets";
+import { getReminders } from "@/lib/services/reminders";
+import { getSignals } from "@/lib/services/signals";
+import { getGoalsWithProgress } from "@/lib/services/goals";
+import { getStreak } from "@/lib/services/streak";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const { start } = monthRange();
-  const [data, cards, recent, monthTx] = await Promise.all([
+  const [data, cards, recent, monthTx, budget, reminders, goals, streak] = await Promise.all([
     getDashboardData(),
     listCards(),
     listTransactions({ limit: 8 }),
     listTransactions({ from: start, limit: 500 }),
+    getBudgetSummary(),
+    getReminders(21),
+    getGoalsWithProgress(),
+    getStreak(),
   ]);
+  const signals = await getSignals(budget, reminders);
 
   const spentByCard = new Map<string, number>();
   for (const tx of monthTx) {
@@ -30,16 +42,22 @@ export default async function DashboardPage() {
         title="نظرة عامة"
         subtitle={`ملخص ${monthLabel(new Date())}`}
         action={
-          <div className="flex gap-2">
-            <Link href="/messages" className="btn-primary">
-              📨 الصق رسالة بنك
+          <div className="flex flex-wrap gap-2">
+            <Link href="/brain-dump" className="btn-primary">
+              ⚡ تفريغ سريع
+            </Link>
+            <Link href="/messages" className="btn-ghost">
+              📨 رسالة بنك
             </Link>
             <Link href="/transactions?new=1" className="btn-ghost">
               ＋ عملية
             </Link>
+            <HideBalancesToggle />
           </div>
         }
       />
+
+      <SignalsStrip signals={signals} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
@@ -95,6 +113,12 @@ export default async function DashboardPage() {
           />
         )}
       </section>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <BudgetPanel budget={budget} />
+        <RemindersPanel reminders={reminders} />
+        <GoalsPanel goals={goals.filter((g) => !g.isArchived)} streak={streak} />
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-5">
         <SectionCard title="المصروفات آخر 6 شهور" subtitle="الأخضر = مصروف · البنفسجي = وارد" className="lg:col-span-3">

@@ -1,6 +1,7 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
+import { hashToken } from "@/lib/auth-token";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -17,6 +18,7 @@ export async function createCategoryAction(formData: FormData): Promise<void> {
       emoji: String(formData.get("emoji") ?? "🏷️").trim() || "🏷️",
       color: String(formData.get("color") ?? "slate"),
       keywords: String(formData.get("keywords") ?? "").trim(),
+      parentId: String(formData.get("parentId") ?? "").trim() || null,
       monthlyBudget: Number(formData.get("monthlyBudget")) || null,
     })
     .onConflictDoNothing();
@@ -29,7 +31,10 @@ export async function updateCategoryAction(formData: FormData): Promise<void> {
   await db
     .update(categories)
     .set({
+      name: String(formData.get("name") ?? "").trim() || undefined,
+      emoji: String(formData.get("emoji") ?? "").trim() || undefined,
       keywords: String(formData.get("keywords") ?? "").trim(),
+      parentId: String(formData.get("parentId") ?? "").trim() || null,
       monthlyBudget: Number(formData.get("monthlyBudget")) || null,
     })
     .where(eq(categories.id, id));
@@ -52,10 +57,27 @@ export async function restoreDefaultCategoriesAction(): Promise<void> {
   revalidatePath("/settings");
 }
 
-export async function createTokenAction(formData: FormData): Promise<void> {
+export interface TokenFormState {
+  ok: boolean;
+  message?: string;
+  /** المفتاح الكامل بيظهر مرة واحدة بس عند الإنشاء */
+  token?: string;
+}
+
+/**
+ * إنشاء مفتاح API: بنخزّن **بصمة SHA-256** بس (مش النص الصريح) وبنعرض
+ * المفتاح مرة واحدة — مقابل `KeystoreFieldCipher` في Mezanetak (تشفير الحقول الحساسة).
+ */
+export async function createTokenAction(_prev: TokenFormState, formData: FormData): Promise<TokenFormState> {
   const name = String(formData.get("name") ?? "").trim() || "تطبيق الموبايل";
-  await db.insert(apiTokens).values({ name, token: `msr_${randomBytes(24).toString("hex")}` });
+  const token = `msr_${randomBytes(24).toString("hex")}`;
+  await db.insert(apiTokens).values({
+    name,
+    token: `${token.slice(0, 8)}…${token.slice(-4)}`,
+    tokenHash: hashToken(token),
+  });
   revalidatePath("/settings");
+  return { ok: true, message: "اتعمل مفتاح جديد — انسخه دلوقتي، مش هيظهر تاني 🔐", token };
 }
 
 export async function deleteTokenAction(formData: FormData): Promise<void> {

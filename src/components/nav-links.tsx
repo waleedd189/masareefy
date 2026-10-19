@@ -3,14 +3,24 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+/**
+ * روابط التنقّل مع أولوية: الأول 5 بيظهروا في شريط الأسفل على الموبايل،
+ * والباقي في السايدبار بس (نفس فكرة Hub بـ27 أداة في Mezanetak).
+ */
 const LINKS = [
-  { href: "/", label: "الرئيسية", icon: "📊" },
-  { href: "/cards", label: "البطاقات", icon: "💳" },
-  { href: "/transactions", label: "العمليات", icon: "🧾" },
-  { href: "/messages", label: "رسائل البنك", icon: "📨" },
-  { href: "/offline", label: "أوفلاين", icon: "📱" },
-  { href: "/settings", label: "الإعدادات", icon: "⚙️" },
+  { href: "/", label: "الرئيسية", icon: "📊", priority: 1 },
+  { href: "/transactions", label: "العمليات", icon: "🧾", priority: 2 },
+  { href: "/brain-dump", label: "تفريغ", icon: "⚡", priority: 3 },
+  { href: "/messages", label: "رسائل البنك", icon: "📨", priority: 4 },
+  { href: "/cards", label: "الحسابات", icon: "💳", priority: 5 },
+  { href: "/reports", label: "التقارير", icon: "📑", priority: 6 },
+  { href: "/goals", label: "الأهداف", icon: "🎯", priority: 7 },
+  { href: "/commitments", label: "الالتزامات", icon: "🔁", priority: 8 },
+  { href: "/offline", label: "أوفلاين", icon: "📱", priority: 9 },
+  { href: "/settings", label: "الإعدادات", icon: "⚙️", priority: 10 },
 ];
+
+const BOTTOM_COUNT = 5;
 
 export function NavLinks({ variant = "side" }: { variant?: "side" | "bottom" }) {
   const pathname = usePathname();
@@ -19,7 +29,7 @@ export function NavLinks({ variant = "side" }: { variant?: "side" | "bottom" }) 
   if (variant === "bottom") {
     return (
       <ul className="flex items-center justify-between gap-1">
-        {LINKS.map((link) => (
+        {LINKS.slice(0, BOTTOM_COUNT).map((link) => (
           <li key={link.href} className="flex-1">
             <Link
               href={link.href}

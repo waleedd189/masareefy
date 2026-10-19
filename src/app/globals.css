@@ -153,3 +153,40 @@ select option {
 .animate-rise {
   animation: rise 0.35s ease both;
 }
+
+/* إخفاء الأرصدة: بيطمس أي عنصر فيه مبلغ (بيتحكم فيه HideBalancesToggle) */
+html.hide-money [data-money] {
+  filter: blur(7px);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* الطباعة: تقرير نظيف بدون خلفية داكنة أو عناصر تحكم */
+@media print {
+  :root {
+    color-scheme: light;
+  }
+  body {
+    background: #fff !important;
+    color: #0f172a !important;
+  }
+  .surface {
+    background: #fff !important;
+    border-color: #cbd5e1 !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+  .print\:hidden,
+  nav,
+  aside,
+  button,
+  form {
+    display: none !important;
+  }
+  [data-money] {
+    filter: none !important;
+  }
+  * {
+    color: #0f172a !important;
+  }
+}

@@ -8,6 +8,8 @@ import { formatDateTime, formatMoney, maskedCard } from "@/lib/format";
 import type { MessageWithRelations } from "@/lib/services/queries";
 import { TX_TYPES, TX_TYPE_LABELS, type ParsedSms, type TxType } from "@/lib/sms/types";
 import { confirmMessageAction, deleteMessageAction, ignoreMessageAction } from "@/server/actions/messages";
+import { teachWordFromMessageAction } from "@/server/actions/words";
+import { DECISION_LABELS, REASON_LABELS, type DecisionReason } from "@/lib/services/policy";
 
 function toLocalInput(value: string | Date | null | undefined) {
   if (!value) return "";
@@ -43,6 +45,21 @@ export function MessageItem({
               {message.card.name} {maskedCard(message.card.last4)}
             </Badge>
           ) : null}
+          {message.templateId ? (
+            <Badge
+              className={
+                parsed?.confidenceLevel === "VERIFIED"
+                  ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+                  : "border-sky-400/30 bg-sky-500/10 text-sky-200"
+              }
+              title={message.templateId}
+            >
+              {parsed?.confidenceLevel === "VERIFIED" ? "قالب موثّق ✓" : "قالب عام"}
+            </Badge>
+          ) : null}
+          {message.decision ? (
+            <Badge className="border-ink-700 text-ink-400">{DECISION_LABELS[message.decision as keyof typeof DECISION_LABELS] ?? message.decision}</Badge>
+          ) : null}
           <span className="text-[11px] text-ink-500">{formatDateTime(message.receivedAt)}</span>
         </div>
         <span className="text-[11px] text-ink-500">ثقة {Math.round(message.confidence * 100)}%</span>
@@ -65,6 +82,28 @@ export function MessageItem({
       ) : null}
 
       {message.error ? <p className="mt-2 text-[11px] text-amber-300">⚠️ {message.error}</p> : null}
+
+      {message.reasons ? (
+        <ReasonChips raw={message.reasons} />
+      ) : null}
+
+      {parsed?.merchant ? (
+        <form action={teachWordFromMessageAction} className="mt-2 flex flex-wrap items-center gap-2">
+          <input type="hidden" name="word" value={parsed.merchant} />
+          <input type="hidden" name="kind" value={parsed.type === "UNKNOWN" ? "PURCHASE" : parsed.type} />
+          <select name="categoryId" defaultValue="" className="field !w-auto !py-1 !text-[11px]">
+            <option value="">علّم «{parsed.merchant}» كفئة…</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.emoji} {cat.name}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className="btn-ghost !px-2.5 !py-1 !text-[11px]">
+            🧠 علّم المحلل
+          </button>
+        </form>
+      ) : null}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {needsAction ? (
@@ -154,5 +193,29 @@ export function MessageItem({
         </form>
       ) : null}
     </li>
+  );
+}
+
+
+/** رقائق أسباب القرار — "ليه الرسالة دي محتاجة مراجعة؟" (مقابل reasons في Mezanetak) */
+function ReasonChips({ raw }: { raw: string }) {
+  let reasons: DecisionReason[] = [];
+  try {
+    reasons = JSON.parse(raw) as DecisionReason[];
+  } catch {
+    reasons = [];
+  }
+  if (!reasons.length) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {reasons.map((reason) => (
+        <span
+          key={reason}
+          className="rounded-full border border-ink-700/70 bg-ink-950/60 px-2 py-0.5 text-[10px] font-semibold text-ink-300"
+        >
+          {REASON_LABELS[reason] ?? reason}
+        </span>
+      ))}
+    </div>
   );
 }

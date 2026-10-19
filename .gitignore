@@ -48,3 +48,8 @@ next-env.d.ts
 
 # ملفات مؤقتة
 *.tsbuildinfo
+
+# ملفات المرجع الكبيرة (APK للتحليل) — بتتحمل محليًا ومش بتتخزن في Git
+/reference-apks/*.apk
+/reference-apks/*.aab
+/reference-apks/*.xapk
