@@ -252,12 +252,63 @@ src/
 
 ## ☁️ النشر
 
-الكود مكتوب بحيث قاعدة البيانات تتبدل من سطر واحد:
+### 0) حماية قبل أي حاجة 🔐
 
-- **Turso (موصى به مع Vercel):** غيّر `DATABASE_URL` لـ `libsql://...` وضيف `DATABASE_AUTH_TOKEN` — من غير أي تعديل في الكود.
-- **PostgreSQL:** بدّل `drizzle-orm/libsql` بـ `drizzle-orm/node-postgres` في `src/db/client.ts` وغيّر `dialect` في `drizzle.config.ts`.
+التطبيق **مفيهوش تسجيل دخول** (مصمم للاستخدام الشخصي). لو هتنشره على رابط عام:
 
-> ملاحظة أمان: التطبيق حالياً بدون تسجيل دخول (استخدام شخصي). قبل ما تنشره على الإنترنت، فعّل حماية (Basic Auth على مستوى الاستضافة أو أضف Auth.js) — والـ webhook محمي بمفتاح API.
+حطّ كلمة سر في متغير `APP_ACCESS_CODE` — كل الصفحات هتطلبها (HTTP Basic Auth،
+المتصفح بيحفظها مرة واحدة)، و`/api/ingest` مستثنى لأنه محمي بمفتاح API مجزّأ.
+التنفيذ في `src/middleware.ts`، ولو المتغير فاضي البوابة بتشتغل كأنها مش موجودة.
+
+```bash
+APP_ACCESS_CODE="كلمة-سر-قوية" npm run start   # محلي
+# أو على Vercel: Settings → Environment Variables → APP_ACCESS_CODE
+```
+
+كمان فعّل **Vercel Deployment Protection** لو المشروع على خطة بتدعمه.
+
+### 1) قاعدة البيانات
+
+| المكان | الإعداد |
+|---|---|
+| محلي (افتراضي) | `DATABASE_URL=file:./data/masareefy.db` — ملف SQLite بيتعمل لوحده |
+| Vercel / أي سحابة | **Turso** (libSQL): `DATABASE_URL=libsql://xxxx.turso.io` + `DATABASE_AUTH_TOKEN=...` |
+
+```bash
+npm i -g @tursodatabase/cli
+turso db create masareefy
+turso db show masareefy --url          # ← DATABASE_URL
+turso db tokens create masareefy       # ← DATABASE_AUTH_TOKEN
+```
+
+> ⚠️ **مهم:** ملف SQLite المحلي **مش بيستمر** على Vercel (نظام ملفات مؤقت)،
+> فالنشر العام محتاج Turso أو أي libSQL/Postgres سحابي. الـmigrations بتشتغل
+> تلقائيًا عند بدء السيرفر (`src/instrumentation.ts`) أو يدويًا بـ`npm run db:migrate`.
+
+### 2) النشر على Vercel (الأسهل)
+
+1. ارفع المشروع على GitHub (موجود بالفعل) وادخل [vercel.com/new](https://vercel.com/new).
+2. **Import** المستودع، واختار الفرع (Branch) اللي عايز تنشره.
+3. Framework: Next.js (بيتكشف تلقائيًا) — سيب أوامر البناء فاضية.
+4. ضيف متغيرات البيئة: `DATABASE_URL` · `DATABASE_AUTH_TOKEN` · `APP_ACCESS_CODE`.
+5. **Deploy** — وأول تشغيل هيطبّق الـmigrations على Turso لوحده.
+
+تحب تبدأ ببيانات تجريبية على القاعدة السحابية؟ شغّل `npm run db:seed`
+والمتغيرات موضبطة على Turso، أو ابدأ فاضي وسجّل حساباتك من صفحة «الحسابات».
+
+### 3) بدائل
+
+- **VPS / أي سيرفر Node:** `npm ci && npm run build && APP_ACCESS_CODE=... npm run start`
+  (أو خلف nginx/Caddy مع HTTPS)، وقاعدة البيانات ملف محلي عادي.
+- **Docker:** `npm run build` ثم `npm run start` — مع volume على `/app/data`.
+- **PostgreSQL:** بدّل `drizzle-orm/libsql` بـ `drizzle-orm/node-postgres` في
+  `src/db/client.ts` وغيّر `dialect` في `drizzle.config.ts`.
+
+### 4) تشغيل نسخة الإنتاج محليًا
+
+```bash
+npm run build && npm run start          # http://localhost:3000
+```
 
 ---
 
