@@ -108,6 +108,11 @@ export const transactions = sqliteTable(
     isPending: integer("is_pending", { mode: "boolean" }).notNull().default(false),
     goalId: text("goal_id"),
     recurringId: text("recurring_id"),
+    /**
+     * معرّف التحويل بين الحسابات: الرجلين (خارج من حساب / داخل لحساب)
+     * بيتشاركوا نفس القيمة عشان يتحسبوا كتحويل واحد ويتحذفوا مع بعض.
+     */
+    transferId: text("transfer_id"),
     note: text("note"),
     messageId: text("message_id").references(() => messages.id, { onDelete: "set null" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(now),
@@ -117,6 +122,7 @@ export const transactions = sqliteTable(
     index("tx_card_date_idx").on(table.cardId, table.occurredAt),
     index("tx_date_idx").on(table.occurredAt),
     index("tx_category_idx").on(table.categoryId),
+    index("tx_transfer_idx").on(table.transferId),
     uniqueIndex("tx_message_idx").on(table.messageId),
   ],
 );

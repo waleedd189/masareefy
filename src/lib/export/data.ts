@@ -217,7 +217,7 @@ export async function transactionsJson(range: DateRange) {
 
 // ── XLSX (ملف Excel بأكثر من ورقة) ───────────────────────────────────────────
 
-export async function buildReportWorkbook(range: DateRange): Promise<Buffer> {
+export async function buildReportWorkbook(range: DateRange, extraSheets: SheetData[] = []): Promise<Buffer> {
   const data = await collectExportData(range);
   const totals = summarize(data);
   const budget = await getBudgetSummary(range.from);
@@ -346,7 +346,7 @@ export async function buildReportWorkbook(range: DateRange): Promise<Buffer> {
     ],
   };
 
-  return buildXlsx([summary, txSheet, cardsSheet, goalsSheet, commitmentsSheet, messagesSheet]);
+  return buildXlsx([summary, txSheet, cardsSheet, goalsSheet, commitmentsSheet, messagesSheet, ...extraSheets]);
 }
 
 /** نسخة CSV مجمّعة لكل الجداول (للاستيراد في أداة تانية) */

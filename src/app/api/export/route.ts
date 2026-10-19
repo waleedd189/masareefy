@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { comparePeriods, comparisonSheet } from "@/lib/services/compare";
 import {
   backupJson,
   buildReportWorkbook,
@@ -20,6 +21,8 @@ export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const format = (params.get("format") ?? "json").toLowerCase();
   const range = parseRange(params.get("from"), params.get("to"));
+  const cmpFrom = params.get("cmpFrom");
+  const cmpTo = params.get("cmpTo");
   const stamp = new Date().toISOString().slice(0, 10);
 
   try {
@@ -55,7 +58,8 @@ export async function GET(req: NextRequest) {
 
     // ملف Excel بعدة أوراق (ملخص/عمليات/حسابات/أهداف/التزامات/رسائل)
     if (format === "xlsx" || format === "excel") {
-      const buffer = await buildReportWorkbook(range);
+      const comparison = await comparePeriods(range, cmpFrom, cmpTo);
+      const buffer = await buildReportWorkbook(range, [comparisonSheet(comparison)]);
       return new NextResponse(new Uint8Array(buffer), {
         headers: {
           "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

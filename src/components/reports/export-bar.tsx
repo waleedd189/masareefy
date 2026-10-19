@@ -6,11 +6,27 @@ import { useMemo, useState } from "react";
  * شريط التصدير: اختار الفترة ونزّل Excel/CSV/نسخة احتياطية أو اطبع PDF.
  * مقابل `export_screen/{excel,pdf,backup}-color.svg` في Mezanetak.
  */
-export function ExportBar({ defaultFrom, defaultTo }: { defaultFrom: string; defaultTo: string }) {
+export function ExportBar({
+  defaultFrom,
+  defaultTo,
+  defaultCmpFrom,
+  defaultCmpTo,
+}: {
+  defaultFrom: string;
+  defaultTo: string;
+  defaultCmpFrom: string;
+  defaultCmpTo: string;
+}) {
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(defaultTo);
+  const [cmpFrom, setCmpFrom] = useState(defaultCmpFrom);
+  const [cmpTo, setCmpTo] = useState(defaultCmpTo);
 
   const query = useMemo(() => new URLSearchParams({ from, to }).toString(), [from, to]);
+  const compareQuery = useMemo(
+    () => new URLSearchParams({ from, to, cmpFrom, cmpTo }).toString(),
+    [from, to, cmpFrom, cmpTo],
+  );
 
   const links = [
     { href: `/api/export?format=xlsx&${query}`, label: "📊 Excel (تقرير كامل)", primary: true },
@@ -52,6 +68,24 @@ export function ExportBar({ defaultFrom, defaultTo }: { defaultFrom: string; def
         <button type="button" onClick={() => window.print()} className="btn-ghost !px-3 !py-1.5 !text-[11px] print:hidden">
           🖨️ طباعة / PDF
         </button>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-2 rounded-2xl border border-ink-700/50 bg-ink-950/40 p-2.5 print:hidden">
+        <span className="text-[11px] font-bold text-ink-300">⚖️ قارن بفترة:</span>
+        <label className="space-y-1">
+          <span className="field-label">من</span>
+          <input type="date" value={cmpFrom} onChange={(e) => setCmpFrom(e.target.value)} className="field !w-auto !py-1.5 !text-xs" />
+        </label>
+        <label className="space-y-1">
+          <span className="field-label">إلى</span>
+          <input type="date" value={cmpTo} onChange={(e) => setCmpTo(e.target.value)} className="field !w-auto !py-1.5 !text-xs" />
+        </label>
+        <a href={`/reports?${compareQuery}`} className="btn-primary !px-3 !py-1.5 !text-[11px]">
+          طبّق المقارنة
+        </a>
+        <a href={`/reports?${query}`} className="btn-ghost !px-3 !py-1.5 !text-[11px]">
+          الفترة السابقة تلقائيًا
+        </a>
       </div>
 
       <div className="flex flex-wrap gap-2 print:hidden">

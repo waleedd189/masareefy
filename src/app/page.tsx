@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CardTile } from "@/components/card-tile";
-import { BudgetPanel, GoalsPanel, RemindersPanel, SignalsStrip } from "@/components/dashboard/insight-panels";
+import { BadgesStrip, BudgetPanel, GoalsPanel, RemindersPanel, SignalsStrip } from "@/components/dashboard/insight-panels";
 import { HideBalancesToggle } from "@/components/dashboard/hide-balances";
 import { CategoryDonut, MonthlyBars } from "@/components/charts";
 import { TransactionList } from "@/components/transaction-list";
@@ -13,12 +13,13 @@ import { getReminders } from "@/lib/services/reminders";
 import { getSignals } from "@/lib/services/signals";
 import { getGoalsWithProgress } from "@/lib/services/goals";
 import { getStreak } from "@/lib/services/streak";
+import { getBadges } from "@/lib/services/badges";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const { start } = monthRange();
-  const [data, cards, recent, monthTx, budget, reminders, goals, streak] = await Promise.all([
+  const [data, cards, recent, monthTx, budget, reminders, goals, streak, badges] = await Promise.all([
     getDashboardData(),
     listCards(),
     listTransactions({ limit: 8 }),
@@ -27,6 +28,7 @@ export default async function DashboardPage() {
     getReminders(21),
     getGoalsWithProgress(),
     getStreak(),
+    getBadges(),
   ]);
   const signals = await getSignals(budget, reminders);
 
@@ -119,6 +121,8 @@ export default async function DashboardPage() {
         <RemindersPanel reminders={reminders} />
         <GoalsPanel goals={goals.filter((g) => !g.isArchived)} streak={streak} />
       </div>
+
+      <BadgesStrip badges={badges} />
 
       <div className="grid gap-4 lg:grid-cols-5">
         <SectionCard title="المصروفات آخر 6 شهور" subtitle="الأخضر = مصروف · البنفسجي = وارد" className="lg:col-span-3">

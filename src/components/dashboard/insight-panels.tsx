@@ -6,6 +6,7 @@ import { dueLabel, type Reminder, type ReminderKind } from "@/lib/services/remin
 import type { Signal } from "@/lib/services/signals";
 import type { GoalProgress } from "@/lib/services/goals";
 import type { StreakInfo } from "@/lib/services/streak";
+import type { BadgesSummary } from "@/lib/services/badges";
 
 const KIND_ICONS: Record<ReminderKind, string> = {
   CARD_STATEMENT: "🧾",
@@ -208,6 +209,51 @@ export function GoalsPanel({ goals, streak }: { goals: GoalProgress[]; streak: S
           </Link>
         </p>
       )}
+    </SectionCard>
+  );
+}
+
+/** شريط الشارات: المفتوح أخيرًا + أقرب شارة جاية */
+export function BadgesStrip({ badges }: { badges: BadgesSummary }) {
+  const recent = badges.earned.slice(-4).reverse();
+  if (!badges.earnedCount && !badges.nextUp) return null;
+
+  return (
+    <SectionCard
+      title="🏅 الشارات"
+      subtitle={`${badges.earnedCount} من ${badges.totalCount} مفتوحة (${badges.pct}%)`}
+      action={
+        <Link href="/badges" className="text-xs font-semibold text-brand-300 hover:underline">
+          كل الشارات ←
+        </Link>
+      }
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {recent.map((b) => (
+          <span
+            key={b.id}
+            title={`${b.title} — ${b.description}`}
+            className="flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-100"
+          >
+            <span className="text-sm">{b.emoji}</span>
+            {b.title}
+          </span>
+        ))}
+        {badges.nextUp ? (
+          <span
+            title={`${badges.nextUp.description} (${badges.nextUp.progress}/${badges.nextUp.target})`}
+            className="flex min-w-[180px] flex-1 items-center gap-2 rounded-full border border-ink-700/60 bg-ink-950/50 px-2.5 py-1"
+          >
+            <span className="text-sm grayscale">{badges.nextUp.emoji}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[11px] font-semibold text-ink-300">
+                الجاية: {badges.nextUp.title} · {badges.nextUp.progress}/{badges.nextUp.target}
+              </span>
+              <ProgressBar value={(badges.nextUp.progress / badges.nextUp.target) * 100} tone="warn" />
+            </span>
+          </span>
+        ) : null}
+      </div>
     </SectionCard>
   );
 }
