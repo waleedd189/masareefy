@@ -5,8 +5,9 @@ import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { extractPdfText } from "@/lib/import/pdf";
 import { parseStatementLines, type StatementRow } from "@/lib/import/statement";
+import { createStatementArchive, findStatementByHash } from "@/lib/services/statements";
 import { db } from "@/db/client";
-import { cards, messages, transactions } from "@/db/schema";
+import { cards, messages, statements, transactions } from "@/db/schema";
 import { parseAmount } from "@/lib/sms/normalize";
 import { recomputeCard } from "@/lib/services/balances";
 import { suggestCategoryId } from "@/lib/services/categorize";
@@ -252,6 +253,13 @@ export interface StatementPreviewState {
   skipped?: number;
   warnings?: string[];
   source?: string;
+  /** بصمة الملف لمنع استيراد نفس الكشف مرتين */
+  fileHash?: string;
+  /** اسم الكشف في الأرشيف */
+  label?: string;
+  /** PDF | CSV | TEXT */
+  kind?: "PDF" | "CSV" | "TEXT";
+  duplicateOf?: string;
 }
 
 interface StatementSource {
@@ -260,6 +268,8 @@ interface StatementSource {
   isPdf: boolean;
   pages: number;
   warnings: string[];
+  fileHash: string;
+  kind: "PDF" | "CSV" | "TEXT";
 }
 
 /** قراءة الملف (PDF ← استخراج نص، غيره ← نص خام) */
@@ -272,6 +282,7 @@ async function readStatementSource(formData: FormData): Promise<StatementSource>
       file.type === "application/pdf" ||
       /\.pdf$/i.test(file.name) ||
       buffer.subarray(0, 5).toString("latin1") === "%PDF-";
+    const fileHash = createHash("sha256").update(buffer).digest("hex");
     if (isPdf) {
       const extracted = extractPdfText(buffer);
       return {
@@ -280,12 +291,31 @@ async function readStatementSource(formData: FormData): Promise<StatementSource>
         isPdf: true,
         pages: extracted.pages,
         warnings: extracted.warnings,
+        fileHash,
+        kind: "PDF",
       };
     }
-    return { text: buffer.toString("utf8"), name: file.name, isPdf: false, pages: 0, warnings: [] };
+    return {
+      text: buffer.toString("utf8"),
+      name: file.name,
+      isPdf: false,
+      pages: 0,
+      warnings: [],
+      fileHash,
+      kind: /\.csv$/i.test(file.name) ? "CSV" : "TEXT",
+    };
   }
 
-  return { text: String(formData.get("text") ?? ""), name: "نص ملصوق", isPdf: false, pages: 0, warnings: [] };
+  const text = String(formData.get("text") ?? "");
+  return {
+    text,
+    name: "نص ملصوق",
+    isPdf: false,
+    pages: 0,
+    warnings: [],
+    fileHash: createHash("sha256").update(text).digest("hex"),
+    kind: "TEXT",
+  };
 }
 
 function toDto(rows: StatementRow[]): StatementRowDto[] {
@@ -326,7 +356,23 @@ export async function previewStatementAction(
     };
   }
 
+  const existing = await findStatementByHash(source.fileHash);
   const pageNote = source.isPdf && source.pages ? ` · ${source.pages} صفحة` : "";
+  if (existing) {
+    return {
+      ok: true,
+      message: `الكشف «${existing.label}» مستورد قبل كده (${existing.rowsCount} صف) — الصفوف أدناه للمراجعة، ولو حفظت هيتخطّى المكرر`,
+      rows: toDto(result.rows),
+      skipped: result.skipped,
+      warnings: [...source.warnings, "الكشف موجود في الأرشيف بالفعل (نفس بصمة الملف)"],
+      source: source.name,
+      fileHash: source.fileHash,
+      label: source.name,
+      kind: source.kind,
+      duplicateOf: existing.id,
+    };
+  }
+
   return {
     ok: true,
     message: `استخرجنا ${result.rows.length} صف من «${source.name}»${pageNote} (اتخطّى ${result.skipped})`,
@@ -334,6 +380,9 @@ export async function previewStatementAction(
     skipped: result.skipped,
     warnings: source.warnings,
     source: source.name,
+    fileHash: source.fileHash,
+    label: source.name,
+    kind: source.kind,
   };
 }
 
@@ -357,6 +406,26 @@ export async function importStatementAction(
   const touched = new Set<string>();
   let imported = 0;
   let skipped = 0;
+
+  // نسجّل الكشف في الأرشيف الأول عشان كل عملية تاخد statementId
+  const label = String(formData.get("label") ?? "").trim() || "كشف مستورد";
+  const kind = String(formData.get("kind") ?? "TEXT");
+  const fileHash = String(formData.get("fileHash") ?? "").trim() || null;
+  const archive = await createStatementArchive({
+    label,
+    cardId,
+    source: kind === "PDF" || kind === "CSV" || kind === "TEXT" ? kind : "TEXT",
+    rows: rows.map((row) => ({
+      date: row.dateIso ? new Date(row.dateIso) : null,
+      amount: Number(row.amount) || 0,
+      direction: row.direction,
+      currency: row.currency || "EGP",
+    })),
+    skipped: 0,
+    fileHash,
+    notes: null,
+  });
+  const statementId = archive?.id ?? null;
 
   for (const row of rows) {
     const amount = Number(row.amount);
@@ -387,7 +456,8 @@ export async function importStatementAction(
       description: row.description || null,
       categoryId,
       occurredAt,
-      note: "استيراد كشف حساب",
+      statementId,
+      note: `استيراد كشف حساب${archive ? ` — ${archive.label}` : ""}`,
       source: "IMPORT",
     });
     await db.insert(messages).values({
@@ -407,16 +477,26 @@ export async function importStatementAction(
     imported++;
   }
 
+  if (archive) {
+    await db
+      .update(statements)
+      .set({ rowsCount: imported, skippedCount: skipped })
+      .where(eq(statements.id, archive.id));
+  }
+
   for (const id of touched) await recomputeCard(id);
 
   revalidatePath("/transactions");
   revalidatePath("/");
   revalidatePath("/reports");
   revalidatePath("/settings");
+  revalidatePath("/statements");
 
   return {
     ok: imported > 0,
-    message: `تم استيراد ${imported} عملية${skipped ? ` (و${skipped} اتخطّت: مكررة أو غير صالحة)` : ""}`,
+    message: imported
+      ? `تم استيراد ${imported} عملية${archive ? ` وحفظها في أرشيف الكشوف باسم «${archive.label}»` : ""}${skipped ? ` (و${skipped} اتخطّت: مكررة أو غير صالحة)` : ""}`
+      : `مفيش عمليات جديدة — كل الصفوف مكررة أو غير صالحة${archive ? " (واتسجّل الكشف في الأرشيف)" : ""} (اتخطّى ${skipped})`,
     imported,
     skipped,
   };

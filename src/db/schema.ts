@@ -113,6 +113,11 @@ export const transactions = sqliteTable(
      * بيتشاركوا نفس القيمة عشان يتحسبوا كتحويل واحد ويتحذفوا مع بعض.
      */
     transferId: text("transfer_id"),
+    /**
+     * معرّف الكشف/الفاتورة المستوردة اللي العملية جات منه —
+     * بيخلّي الأرشيف يعرض كل كشف بعملياته وإجمالياته، والإلغاء يحذفها مع بعض.
+     */
+    statementId: text("statement_id"),
     note: text("note"),
     messageId: text("message_id").references(() => messages.id, { onDelete: "set null" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(now),
@@ -123,6 +128,7 @@ export const transactions = sqliteTable(
     index("tx_date_idx").on(table.occurredAt),
     index("tx_category_idx").on(table.categoryId),
     index("tx_transfer_idx").on(table.transferId),
+    index("tx_statement_idx").on(table.statementId),
     uniqueIndex("tx_message_idx").on(table.messageId),
   ],
 );
@@ -246,6 +252,30 @@ export const debts = sqliteTable("debts", {
 });
 
 /** إعدادات عامة key/value */
+/** أرشيف كشوف الحساب والفواتير المستوردة (PDF/CSV/نص) */
+export const statements = sqliteTable("statements", {
+  id: id(),
+  /** اسم الملف أو وصف المستخدم */
+  label: text("label").notNull(),
+  cardId: text("card_id").references(() => cards.id, { onDelete: "set null" }),
+  /** PDF | CSV | TEXT */
+  source: text("source").notNull().default("PDF"),
+  periodFrom: integer("period_from", { mode: "timestamp_ms" }),
+  periodTo: integer("period_to", { mode: "timestamp_ms" }),
+  rowsCount: integer("rows_count").notNull().default(0),
+  skippedCount: integer("skipped_count").notNull().default(0),
+  totalIn: real("total_in").notNull().default(0),
+  totalOut: real("total_out").notNull().default(0),
+  currency: text("currency").notNull().default("EGP"),
+  /** بصمة الملف (SHA-256) لمنع استيراد نفس الكشف مرتين */
+  fileHash: text("file_hash"),
+  notes: text("notes"),
+  importedAt: integer("imported_at", { mode: "timestamp_ms" }).notNull().$defaultFn(now),
+}, (table) => [
+  index("statement_card_idx").on(table.cardId),
+  index("statement_imported_idx").on(table.importedAt),
+]);
+
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),

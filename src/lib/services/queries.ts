@@ -12,6 +12,8 @@ export interface TransactionFilters {
   categoryId?: string;
   type?: string;
   direction?: "IN" | "OUT";
+  /** عمليات كشف/فاتورة معيّنة من الأرشيف */
+  statementId?: string;
   search?: string;
   from?: Date;
   to?: Date;
@@ -25,6 +27,7 @@ export async function listTransactions(filters: TransactionFilters = {}): Promis
   if (filters.categoryId) conditions.push(eq(transactions.categoryId, filters.categoryId));
   if (filters.type) conditions.push(eq(transactions.type, filters.type));
   if (filters.direction) conditions.push(eq(transactions.direction, filters.direction));
+  if (filters.statementId) conditions.push(eq(transactions.statementId, filters.statementId));
   if (filters.from) conditions.push(gte(transactions.occurredAt, filters.from));
   if (filters.to) conditions.push(lt(transactions.occurredAt, filters.to));
   if (filters.search) {

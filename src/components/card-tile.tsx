@@ -17,7 +17,8 @@ export function CardTile({ card, spentThisMonth }: { card: Card; spentThisMonth?
       <div className="absolute -left-10 -top-10 h-32 w-32 rounded-full bg-white/10 blur-xl" />
       <div className="absolute -bottom-12 -right-6 h-36 w-36 rounded-full bg-black/20 blur-xl" />
 
-      <div className="relative flex items-start justify-between gap-3">
+      <div className="relative flex flex-col" data-card-lines>
+      <div data-card-name className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-bold leading-tight">{card.name}</p>
           <p className="mt-0.5 text-[11px] text-white/70">
@@ -34,7 +35,10 @@ export function CardTile({ card, spentThisMonth }: { card: Card; spentThisMonth?
         </span>
       </div>
 
-      <p className="relative mt-5 font-mono text-lg tracking-[0.25em] text-white/90">{maskedCard(card.last4)}</p>
+      <p data-card-last4 className="relative mt-5 font-mono text-lg tracking-[0.25em] text-white/90">
+        {maskedCard(card.last4)}
+      </p>
+      </div>
 
       <div className="relative mt-4 flex items-end justify-between gap-3">
         <div>

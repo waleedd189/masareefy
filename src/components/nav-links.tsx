@@ -17,8 +17,9 @@ const LINKS = [
   { href: "/goals", label: "الأهداف", icon: "🎯", priority: 7 },
   { href: "/commitments", label: "الالتزامات", icon: "🔁", priority: 8 },
   { href: "/badges", label: "الشارات", icon: "🏅", priority: 9 },
-  { href: "/offline", label: "أوفلاين", icon: "📱", priority: 10 },
-  { href: "/settings", label: "الإعدادات", icon: "⚙️", priority: 11 },
+  { href: "/statements", label: "الكشوف", icon: "📁", priority: 10 },
+  { href: "/offline", label: "أوفلاين", icon: "📱", priority: 11 },
+  { href: "/settings", label: "إعدادات", icon: "⚙️", priority: 12 },
 ];
 
 const BOTTOM_COUNT = 5;

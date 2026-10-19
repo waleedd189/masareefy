@@ -5,6 +5,16 @@
 import { deflateSync } from "node:zlib";
 import { extractPdfText } from "../src/lib/import/pdf";
 import { parseStatementLines, summarizeStatement } from "../src/lib/import/statement";
+import { db } from "../src/db/client";
+import { cards, transactions } from "../src/db/schema";
+import { eq } from "drizzle-orm";
+import {
+  createStatementArchive,
+  deleteStatement,
+  getArchiveStats,
+  getStatement,
+  listStatements,
+} from "../src/lib/services/statements";
 
 const STATEMENT_LINES = [
   "Statement of Account - CIB - Oct 2026",
@@ -92,7 +102,72 @@ const TEXT_STATEMENT = [
   "الإجمالي                                              14,644.50",
 ];
 
-function main() {
+/** اختبار أرشيف الكشوف: إنشاء ← عرض ← ربط عمليات ← حذف (والأرصدة ترجع) */
+async function testArchive() {
+  console.log("\n=== أرشيف الكشوف ===");
+  const [card] = await db.select().from(cards).limit(1);
+  if (!card) {
+    console.log("مفيش حسابات في القاعدة — شغّل npm run db:seed الأول");
+    return;
+  }
+
+  const balanceBefore = card.currentBalance;
+  const rows = parseStatementLines(TEXT_STATEMENT, { defaultYear: 2026 }).rows;
+
+  const archive = await createStatementArchive({
+    label: "اختبار أرشيف — كشف بنك مصر",
+    cardId: card.id,
+    source: "PDF",
+    rows,
+    skipped: 2,
+    fileHash: "test-hash-" + Date.now(),
+  });
+  if (!archive) throw new Error("الأرشيف اتسجّل غلط");
+  console.log(
+    `✅ اتسجّل الكشف: ${archive.rowsCount} صف · وارد ${archive.totalIn} · صادر ${archive.totalOut} · الفترة ${archive.periodFrom?.toISOString().slice(0, 10)} → ${archive.periodTo?.toISOString().slice(0, 10)}`,
+  );
+
+  // نربط عمليتين بالكشف
+  const inserted = [];
+  for (const row of rows.slice(0, 2)) {
+    const [tx] = await db
+      .insert(transactions)
+      .values({
+        cardId: card.id,
+        type: row.type,
+        direction: row.direction,
+        amount: row.amount,
+        currency: row.currency,
+        merchant: row.merchant,
+        description: row.description,
+        occurredAt: row.date ?? new Date(),
+        statementId: archive.id,
+        source: "IMPORT",
+        note: "اختبار أرشيف",
+      })
+      .returning();
+    if (tx) inserted.push(tx.id);
+  }
+
+  const list = await listStatements(10);
+  const detail = await getStatement(archive.id);
+  const stats = await getArchiveStats();
+  console.log(
+    `✅ الأرشيف فيه ${stats.count} كشف (${stats.rows} عملية) · الكشف ظاهر في القائمة: ${list.some((s) => s.id === archive.id)} · عملياته: ${detail?.transactions.length ?? 0}`,
+  );
+
+  const removed = await deleteStatement(archive.id);
+  const afterDelete = await db.select().from(transactions).where(eq(transactions.statementId, archive.id));
+  const [cardAfter] = await db.select().from(cards).where(eq(cards.id, card.id));
+  console.log(
+    `✅ الحذف: ${removed.deleted} عملية اتحذفت · الباقي مرتبط بالكشف: ${afterDelete.length} · الرصيد ${cardAfter?.currentBalance} (كان ${balanceBefore})`,
+  );
+  if (afterDelete.length) throw new Error("فيه عمليات لسه مرتبطة بكشف محذوف");
+  if (!inserted.length) throw new Error("مفيش عمليات اتربطت بالكشف");
+  console.log("✅ دورة الأرشيف كاملة تمام");
+}
+
+async function main() {
   console.log("=== نص كشف عربي مباشر (بدون PDF) ===");
   const textResult = parseStatementLines(TEXT_STATEMENT, { defaultYear: 2026 });
   console.log("التحليل:", summarizeStatement(textResult));
@@ -119,4 +194,7 @@ function main() {
   }
 }
 
-main();
+main().then(testArchive).catch((error) => {
+  console.error('❌', error);
+  process.exitCode = 1;
+});

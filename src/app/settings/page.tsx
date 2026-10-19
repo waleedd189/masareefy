@@ -5,6 +5,7 @@ import { ApiTokens } from "@/components/settings/api-tokens";
 import { LearningPanel } from "@/components/settings/learning-panel";
 import { MerchantsPanel } from "@/components/settings/merchants-panel";
 import { StatementImport } from "@/components/settings/statement-import";
+import { ThemePanel } from "@/components/settings/theme-panel";
 import { PolicyBadges, PolicyPanel } from "@/components/settings/policy-panel";
 import { DataManagement } from "@/components/settings/data-management";
 import { PageHeader, SectionCard } from "@/components/ui";
@@ -302,6 +303,13 @@ export default async function SettingsPage() {
         subtitle="ارفع كشف البنك واستخرج العمليات — معاينة الأول ثم حفظ المختار"
       >
         <StatementImport cards={cards.map((c) => ({ id: c.id, label: `${c.name} ••${c.last4}` }))} />
+      </SectionCard>
+
+      <SectionCard
+        title="🎨 السمة والمظهر"
+        subtitle="لون التمييز، الوضع الداكن/الفاتح، حجم الخط، حوافّ الكروت، وترتيب اسم الحساب — بيتحفظ على جهازك"
+      >
+        <ThemePanel />
       </SectionCard>
 
       <SectionCard title="💾 إدارة البيانات" subtitle="احتفظ بنسخة من بياناتك أو امسح بيانات التجربة قبل ما تبدأ">

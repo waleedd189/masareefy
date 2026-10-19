@@ -6,6 +6,7 @@ import { TransactionList } from "@/components/transaction-list";
 import { PageHeader, SectionCard, StatCard } from "@/components/ui";
 import { formatMoney } from "@/lib/format";
 import { listCards, listCategories, listTransactions } from "@/lib/services/queries";
+import { getStatement } from "@/lib/services/statements";
 import { isIncome, isSpend } from "@/lib/services/stats";
 import { TX_TYPES, TX_TYPE_LABELS } from "@/lib/sms/types";
 
@@ -18,17 +19,24 @@ interface SearchParams {
   q?: string;
   from?: string;
   to?: string;
+  /** من أرشيف الكشوف: عرض عمليات كشف معيّن */
+  statementId?: string;
 }
 
 export default async function TransactionsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const filters = await searchParams;
-  const [cards, categories] = await Promise.all([listCards(), listCategories()]);
+  const [cards, categories, statement] = await Promise.all([
+    listCards(),
+    listCategories(),
+    filters.statementId ? getStatement(filters.statementId) : Promise.resolve(null),
+  ]);
 
   const transactions = await listTransactions({
     cardId: filters.cardId || undefined,
     categoryId: filters.categoryId || undefined,
     type: filters.type || undefined,
     search: filters.q || undefined,
+    statementId: filters.statementId || undefined,
     from: filters.from ? new Date(filters.from) : undefined,
     to: filters.to ? new Date(`${filters.to}T23:59:59`) : undefined,
     limit: 200,
@@ -42,8 +50,18 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     <div className="animate-rise space-y-6">
       <PageHeader
         title="العمليات"
-        subtitle="كل الحركات على بطاقاتك — من الرسائل أو يدوي"
-        action={<Link href="/offline#voice-expense" className="btn-primary">🎙️ إضافة بالصوت</Link>}
+        subtitle={
+          statement
+            ? `عمليات الكشف «${statement.label}» من الأرشيف (${statement.rowsCount} صف مستورد)`
+            : "كل الحركات على بطاقاتك — من الرسائل أو يدوي"
+        }
+        action={
+          statement ? (
+            <Link href="/statements" className="btn-ghost">📁 رجوع للأرشيف</Link>
+          ) : (
+            <Link href="/offline#voice-expense" className="btn-primary">🎙️ إضافة بالصوت</Link>
+          )
+        }
       />
 
       <Suspense fallback={null}>

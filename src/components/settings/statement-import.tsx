@@ -28,6 +28,12 @@ export function StatementImport({ cards }: { cards: { id: string; label: string 
   const [note, setNote] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [fileName, setFileName] = useState<string>("");
+  /** بيانات الأرشيف اللي رجعت من المعاينة (بصمة/اسم/نوع) */
+  const [meta, setMeta] = useState<{ label: string; kind: string; fileHash: string }>({
+    label: "",
+    kind: "TEXT",
+    fileHash: "",
+  });
 
   const selected = rows.filter((r) => r.keep);
   const total = selected.reduce((sum, r) => sum + r.amount, 0);
@@ -43,6 +49,11 @@ export function StatementImport({ cards }: { cards: { id: string; label: string 
       setNote(result.message ?? null);
       setWarnings(result.warnings ?? []);
       setRows((result.rows ?? []).map((row) => ({ ...row, keep: true })));
+      setMeta({
+        label: result.label ?? result.source ?? "كشف مستورد",
+        kind: result.kind ?? "TEXT",
+        fileHash: result.fileHash ?? "",
+      });
     } catch {
       setNote("حصل خطأ أثناء قراءة الملف");
     } finally {
@@ -62,6 +73,9 @@ export function StatementImport({ cards }: { cards: { id: string; label: string 
       const formData = new FormData();
       formData.set("rows", JSON.stringify(payload));
       formData.set("cardId", cardId);
+      formData.set("label", meta.label || fileName || "كشف مستورد");
+      formData.set("kind", meta.kind);
+      formData.set("fileHash", meta.fileHash);
       const result = await importStatementAction({ ok: false }, formData);
       setNote(result.message ?? null);
       if (result.ok) {
