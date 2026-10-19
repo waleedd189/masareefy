@@ -3,6 +3,8 @@ import { CopyField } from "@/components/copy-field";
 import { ParserTester } from "@/components/forms/parser-tester";
 import { ApiTokens } from "@/components/settings/api-tokens";
 import { LearningPanel } from "@/components/settings/learning-panel";
+import { MerchantsPanel } from "@/components/settings/merchants-panel";
+import { StatementImport } from "@/components/settings/statement-import";
 import { PolicyBadges, PolicyPanel } from "@/components/settings/policy-panel";
 import { DataManagement } from "@/components/settings/data-management";
 import { PageHeader, SectionCard } from "@/components/ui";
@@ -12,6 +14,7 @@ import { listCards, listCategories } from "@/lib/services/queries";
 import { getFxRates, getMonthlyBudgetTotal, getPolicy } from "@/lib/settings-store";
 import { listCategoryOptions, listWords } from "@/lib/services/words";
 import { listLinks } from "@/lib/services/sender-links";
+import { getMergeSuggestions } from "@/lib/services/merchants";
 import { BANK_OPTIONS } from "@/lib/sms/banks";
 import { TX_TYPES, TX_TYPE_LABELS } from "@/lib/sms/types";
 import {
@@ -32,7 +35,7 @@ export default async function SettingsPage() {
   const proto = headerList.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const baseUrl = `${proto}://${host}`;
 
-  const [categories, tokens, rules, policy, monthlyBudget, rates, words, links, categoryOptions] = await Promise.all([
+  const [categories, tokens, rules, policy, monthlyBudget, rates, words, links, categoryOptions, merchantGroups] = await Promise.all([
     listCategories(),
     db.select().from(apiTokens),
     db.select().from(parserRules),
@@ -42,6 +45,7 @@ export default async function SettingsPage() {
     listWords(),
     listLinks(),
     listCategoryOptions(),
+    getMergeSuggestions(),
   ]);
   const cards = await listCards();
 
@@ -218,6 +222,14 @@ export default async function SettingsPage() {
       </SectionCard>
 
       <SectionCard
+        title="🛒 دمج التجار المتشابهين"
+        subtitle="نفس التاجر بييجي بأشكال مختلفة من البنك — اختار الاسم الموحّد وادمج العمليات"
+        action={<span className="text-[11px] text-ink-500">{merchantGroups.length} اقتراح</span>}
+      >
+        <MerchantsPanel groups={merchantGroups} />
+      </SectionCard>
+
+      <SectionCard
         title="⚙️ قواعد تحليل مخصّصة"
         subtitle="لو بنكك بيكتب الرسالة بصيغة غريبة، ضيف Regex بمجموعات مسماة: amount, last4, merchant, balance, date"
       >
@@ -283,6 +295,13 @@ export default async function SettingsPage() {
         ) : (
           <p className="text-xs text-ink-400">مفيش قواعد مخصّصة — المحلل الافتراضي بيغطي أغلب البنوك المصرية.</p>
         )}
+      </SectionCard>
+
+      <SectionCard
+        title="📄 استيراد كشف حساب (PDF / CSV)"
+        subtitle="ارفع كشف البنك واستخرج العمليات — معاينة الأول ثم حفظ المختار"
+      >
+        <StatementImport cards={cards.map((c) => ({ id: c.id, label: `${c.name} ••${c.last4}` }))} />
       </SectionCard>
 
       <SectionCard title="💾 إدارة البيانات" subtitle="احتفظ بنسخة من بياناتك أو امسح بيانات التجربة قبل ما تبدأ">

@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
+import { extractPdfText } from "@/lib/import/pdf";
+import { parseStatementLines, type StatementRow } from "@/lib/import/statement";
 import { db } from "@/db/client";
 import { cards, messages, transactions } from "@/db/schema";
 import { parseAmount } from "@/lib/sms/normalize";
@@ -227,4 +229,195 @@ export async function importCsvAction(_prev: ImportState, formData: FormData): P
 /** شرط مطابقة بصمة الصف (لمنع تكرار الاستيراد) */
 function hashKey(hash: string) {
   return eq(messages.hash, hash);
+}
+
+// ── استيراد كشف حساب (PDF أو نص) ────────────────────────────────────────────
+
+export interface StatementRowDto {
+  dateIso: string | null;
+  amount: number;
+  currency: string;
+  merchant: string | null;
+  description: string;
+  type: string;
+  direction: "OUT" | "IN";
+  raw: string;
+  confidence: number;
+}
+
+export interface StatementPreviewState {
+  ok: boolean;
+  message?: string;
+  rows?: StatementRowDto[];
+  skipped?: number;
+  warnings?: string[];
+  source?: string;
+}
+
+interface StatementSource {
+  text: string;
+  name: string;
+  isPdf: boolean;
+  pages: number;
+  warnings: string[];
+}
+
+/** قراءة الملف (PDF ← استخراج نص، غيره ← نص خام) */
+async function readStatementSource(formData: FormData): Promise<StatementSource> {
+  const entry = formData.get("file");
+  if (entry && typeof entry === "object" && "arrayBuffer" in entry) {
+    const file = entry as File;
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const isPdf =
+      file.type === "application/pdf" ||
+      /\.pdf$/i.test(file.name) ||
+      buffer.subarray(0, 5).toString("latin1") === "%PDF-";
+    if (isPdf) {
+      const extracted = extractPdfText(buffer);
+      return {
+        text: extracted.text,
+        name: file.name,
+        isPdf: true,
+        pages: extracted.pages,
+        warnings: extracted.warnings,
+      };
+    }
+    return { text: buffer.toString("utf8"), name: file.name, isPdf: false, pages: 0, warnings: [] };
+  }
+
+  return { text: String(formData.get("text") ?? ""), name: "نص ملصوق", isPdf: false, pages: 0, warnings: [] };
+}
+
+function toDto(rows: StatementRow[]): StatementRowDto[] {
+  return rows.map((row) => ({
+    dateIso: row.date ? row.date.toISOString() : null,
+    amount: row.amount,
+    currency: row.currency,
+    merchant: row.merchant,
+    description: row.description,
+    type: row.type,
+    direction: row.direction,
+    raw: row.raw,
+    confidence: row.confidence,
+  }));
+}
+
+/** معاينة كشف (PDF/CSV/نص) من غير حفظ — المستخدم يراجع الأول */
+export async function previewStatementAction(
+  _prev: StatementPreviewState,
+  formData: FormData,
+): Promise<StatementPreviewState> {
+  void _prev; // الشكل المطلوب من useActionState
+  const source = await readStatementSource(formData);
+  if (!source.text.trim()) return { ok: false, message: "مفيش محتوى في الملف", warnings: source.warnings };
+
+  const result = parseStatementLines(source.text.split(/\r?\n/), {
+    defaultYear: new Date().getFullYear(),
+    maxRows: 400,
+  });
+
+  if (!result.rows.length) {
+    return {
+      ok: false,
+      message: `مقدرناش نستخرج عمليات من «${source.name}» (${result.reasons.join("، ") || "مفيش صفوف صالحة"})`,
+      warnings: source.warnings,
+      skipped: result.skipped,
+      source: source.name,
+    };
+  }
+
+  const pageNote = source.isPdf && source.pages ? ` · ${source.pages} صفحة` : "";
+  return {
+    ok: true,
+    message: `استخرجنا ${result.rows.length} صف من «${source.name}»${pageNote} (اتخطّى ${result.skipped})`,
+    rows: toDto(result.rows),
+    skipped: result.skipped,
+    warnings: source.warnings,
+    source: source.name,
+  };
+}
+
+/** حفظ الصفوف المختارة كعمليات (مع إلغاء التكرار) */
+export async function importStatementAction(
+  _prev: ImportState,
+  formData: FormData,
+): Promise<ImportState> {
+  void _prev;
+  const raw = String(formData.get("rows") ?? "");
+  const cardId = String(formData.get("cardId") ?? "").trim() || null;
+  if (!raw) return { ok: false, message: "مفيش صفوف مختارة للحفظ" };
+
+  let rows: StatementRowDto[];
+  try {
+    rows = JSON.parse(raw) as StatementRowDto[];
+  } catch {
+    return { ok: false, message: "الصفوف مش بصيغة صحيحة" };
+  }
+
+  const touched = new Set<string>();
+  let imported = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const amount = Number(row.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      skipped++;
+      continue;
+    }
+    const occurredAt = row.dateIso ? new Date(row.dateIso) : new Date();
+    const type = (row.type || "PURCHASE") as TxType;
+    const hash = createHash("sha256")
+      .update(`${occurredAt.toISOString().slice(0, 10)}|${amount}|${row.merchant ?? row.description ?? ""}|${cardId ?? ""}|STATEMENT`)
+      .digest("hex");
+
+    const [existing] = await db.select({ id: messages.id }).from(messages).where(eq(messages.hash, hash)).limit(1);
+    if (existing) {
+      skipped++;
+      continue;
+    }
+
+    const categoryId = await suggestCategoryId({ merchant: row.merchant, text: row.description, type });
+    await db.insert(transactions).values({
+      cardId,
+      type,
+      direction: row.direction === "IN" ? "IN" : DEFAULT_DIRECTION[type] ?? "OUT",
+      amount,
+      currency: row.currency || "EGP",
+      merchant: row.merchant,
+      description: row.description || null,
+      categoryId,
+      occurredAt,
+      note: "استيراد كشف حساب",
+      source: "IMPORT",
+    });
+    await db.insert(messages).values({
+      rawText: (row.raw ?? "").slice(0, 900),
+      sender: "STATEMENT_IMPORT",
+      receivedAt: occurredAt,
+      hash,
+      status: "PARSED",
+      decision: "AUTO_POST",
+      confidence: row.confidence ?? 0.7,
+      parsed: JSON.stringify({ amount, merchant: row.merchant, type, currency: row.currency }),
+      cardId,
+      source: "IMPORT",
+    });
+
+    if (cardId) touched.add(cardId);
+    imported++;
+  }
+
+  for (const id of touched) await recomputeCard(id);
+
+  revalidatePath("/transactions");
+  revalidatePath("/");
+  revalidatePath("/reports");
+  revalidatePath("/settings");
+
+  return {
+    ok: imported > 0,
+    message: `تم استيراد ${imported} عملية${skipped ? ` (و${skipped} اتخطّت: مكررة أو غير صالحة)` : ""}`,
+    imported,
+    skipped,
+  };
 }

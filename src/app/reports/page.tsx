@@ -1,8 +1,10 @@
 import { ExportBar } from "@/components/reports/export-bar";
+import { ShareReportImage } from "@/components/reports/share-image";
 import { Badge, EmptyState, PageHeader, ProgressBar, SectionCard, StatCard } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
 import { collectExportData, parseRange, summarize } from "@/lib/export/data";
 import { comparePeriods, deltaLabel, previousPeriod, type Delta } from "@/lib/services/compare";
+import { getForecast } from "@/lib/services/forecast";
 import { getBudgetSummary, toneFor } from "@/lib/services/budgets";
 import { getStreak } from "@/lib/services/streak";
 import { getTopGoal } from "@/lib/services/goals";
@@ -25,13 +27,14 @@ export default async function ReportsPage({
   const params = await searchParams;
   const range = parseRange(params.from, params.to);
   const autoPrev = previousPeriod(range);
-  const [data, budget, streak, topGoal, rates, comparison] = await Promise.all([
+  const [data, budget, streak, topGoal, rates, comparison, forecast] = await Promise.all([
     collectExportData(range),
     getBudgetSummary(range.from),
     getStreak(),
     getTopGoal(),
     getRates(),
     comparePeriods(range, params.cmpFrom, params.cmpTo),
+    getForecast(),
   ]);
 
   const totals = summarize(data);
@@ -75,6 +78,29 @@ export default async function ReportsPage({
           defaultCmpTo={(params.cmpTo ?? autoPrev.to.toISOString().slice(0, 10))}
         />
       </SectionCard>
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_auto] print:hidden">
+        <SectionCard title="📤 شارك التقرير كصورة" subtitle="ملخص الفترة بيتحوّل لصورة جاهزة للواتساب أو أي تطبيق (بدون أي مكتبة خارجية)">
+          <ShareReportImage
+            data={{
+              periodLabel: `${formatDate(range.from)} → ${formatDate(range.to)}`,
+              spent: totals.spent,
+              income: totals.income,
+              net: totals.net,
+              txCount: data.transactions.length,
+              currency,
+              budgetPct: budget.effectiveBudget ? budget.pct : null,
+              budgetRemaining: budget.effectiveBudget ? budget.remaining : null,
+              projected: forecast.next.projected,
+              streak: streak.current,
+              categories: totals.byCategory.slice(0, 6).map((row) => {
+                const cat = data.categories.find((c) => c.name === row.name);
+                return { name: row.name, emoji: cat?.emoji ?? "🏷️", total: row.total, pct: row.pct };
+              }),
+            }}
+          />
+        </SectionCard>
+      </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 print:grid-cols-4">
         <StatCard label="إجمالي الصرف" value={formatMoney(totals.spent, undefined, { compact: true })} icon="💸" tone="bad" />
@@ -143,6 +169,97 @@ export default async function ReportsPage({
             </div>
           </div>
         ) : null}
+      </SectionCard>
+
+      <SectionCard
+        title="🔮 توقع الشهر الجاي"
+        subtitle={`${forecast.next.label} · ${forecast.next.basis}`}
+        action={
+          <span className="text-[11px] text-ink-500">
+            ثقة {Math.round(forecast.confidence * 100)}%
+            {forecast.trendPct !== null ? ` · اتجاه ${forecast.trendPct > 0 ? "+" : ""}${forecast.trendPct}%/شهر` : ""}
+            {forecast.seasonalityPct !== null ? ` · موسمية ${forecast.seasonalityPct > 0 ? "+" : ""}${forecast.seasonalityPct}%` : ""}
+          </span>
+        }
+      >
+        {forecast.history.filter((h) => h.spent > 0).length >= 2 ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="rounded-2xl border border-brand-500/30 bg-brand-500/10 px-4 py-3">
+                <p className="text-[11px] text-ink-400">المتوقع صرفه</p>
+                <p className="text-2xl font-black text-brand-200" data-money>
+                  {formatMoney(forecast.next.projected, currency)}
+                </p>
+                <p className="text-[10px] text-ink-500" data-money>
+                  المدى: {formatMoney(forecast.next.low, currency)} — {formatMoney(forecast.next.high, currency)}
+                </p>
+              </div>
+              {budget.effectiveBudget ? (
+                <div className="rounded-2xl border border-ink-700/60 bg-ink-950/50 px-4 py-3">
+                  <p className="text-[11px] text-ink-400">مقابل الميزانية</p>
+                  <p
+                    className={`text-lg font-extrabold ${
+                      forecast.next.projected > budget.effectiveBudget ? "text-rose-300" : "text-emerald-300"
+                    }`}
+                    data-money
+                  >
+                    {forecast.next.projected > budget.effectiveBudget
+                      ? `تجاوز متوقع بـ ${formatMoney(forecast.next.projected - budget.effectiveBudget, currency)}`
+                      : `جوه الميزانية (فاضل ${formatMoney(budget.effectiveBudget - forecast.next.projected, currency)})`}
+                  </p>
+                  <ProgressBar
+                    value={(forecast.next.projected / budget.effectiveBudget) * 100}
+                    tone={forecast.next.projected > budget.effectiveBudget ? "danger" : "brand"}
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex items-end gap-1.5" style={{ height: 72 }}>
+              {forecast.history.map((h) => {
+                const max = Math.max(...forecast.history.map((x) => x.spent), forecast.next.projected, 1);
+                const height = Math.max(3, Math.round((h.spent / max) * 100));
+                return (
+                  <div key={h.key} className="flex flex-1 flex-col items-center gap-1" title={`${h.label}: ${formatMoney(h.spent, currency)}`}>
+                    <div className="w-full rounded-t-md bg-ink-700" style={{ height: `${height}%` }} />
+                    <span className="text-[9px] text-ink-500">{h.label.split(" ")[0]}</span>
+                  </div>
+                );
+              })}
+              <div className="flex flex-1 flex-col items-center gap-1" title={`متوقع ${forecast.next.label}`}>
+                <div
+                  className="w-full rounded-t-md bg-gradient-to-t from-brand-500 to-brand-300"
+                  style={{
+                    height: `${Math.max(3, Math.round((forecast.next.projected / Math.max(...forecast.history.map((x) => x.spent), forecast.next.projected, 1)) * 100))}%`,
+                  }}
+                />
+                <span className="text-[9px] font-bold text-brand-300">متوقع</span>
+              </div>
+            </div>
+
+            {forecast.byCategory.length ? (
+              <div>
+                <p className="mb-2 text-[11px] font-bold text-ink-400">توقع الفئات (حسب نصيبها الشهر اللي فات)</p>
+                <ul className="space-y-1.5">
+                  {forecast.byCategory.map((row) => (
+                    <li key={row.id} className="flex items-center justify-between gap-2 rounded-xl bg-ink-950/50 px-3 py-1.5 text-[11px]">
+                      <span className="truncate font-semibold text-ink-200">
+                        {row.emoji} {row.name}
+                      </span>
+                      <span className="shrink-0 text-ink-400" data-money>
+                        {formatMoney(row.last, currency)} ← <b className="text-brand-300">{formatMoney(row.projected, currency)}</b>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <p className="py-4 text-center text-xs text-ink-400">
+            التوقع محتاج بيانات شهرين على الأقل — كل ما العمليات تزيد، التوقع يبقى أدق.
+          </p>
+        )}
       </SectionCard>
 
       {totals.byCategory.length ? (
