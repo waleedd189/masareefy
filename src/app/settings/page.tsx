@@ -6,6 +6,7 @@ import { LearningPanel } from "@/components/settings/learning-panel";
 import { MerchantsPanel } from "@/components/settings/merchants-panel";
 import { StatementImport } from "@/components/settings/statement-import";
 import { ThemePanel } from "@/components/settings/theme-panel";
+import { RestorePanel } from "@/components/settings/restore-panel";
 import { PolicyBadges, PolicyPanel } from "@/components/settings/policy-panel";
 import { DataManagement } from "@/components/settings/data-management";
 import { PageHeader, SectionCard } from "@/components/ui";
@@ -315,6 +316,12 @@ export default async function SettingsPage() {
       <SectionCard title="💾 إدارة البيانات" subtitle="احتفظ بنسخة من بياناتك أو امسح بيانات التجربة قبل ما تبدأ">
         <DataManagement />
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-ink-700/50 pt-4">
+          <span className="text-xs text-ink-400">نسخة احتياطية كاملة (بتشمل الحسابات والعمليات والرسائل والأهداف والالتزامات وأرشيف الكشوف والبيانات المتعلَّمة):</span>
+          <a href="/api/export?format=backup" className="btn-primary !px-3 !py-1.5 !text-xs">
+            ⬇️ تنزيل نسخة احتياطية
+          </a>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-ink-700/50 pt-4">
           <span className="text-xs text-ink-400">تصدير العمليات فقط:</span>
           <a href="/api/export?format=csv" className="btn-ghost !px-3 !py-1.5 !text-xs">
             CSV
@@ -323,6 +330,13 @@ export default async function SettingsPage() {
             JSON
           </a>
         </div>
+      </SectionCard>
+
+      <SectionCard
+        title="📥 استيراد نسخة احتياطية"
+        subtitle="ارجّع بياناتك من ملف JSON — بفحص ومعاينة للأعداد قبل أي كتابة، وبنعيد حساب الأرصدة بعدها"
+      >
+        <RestorePanel />
       </SectionCard>
     </div>
   );

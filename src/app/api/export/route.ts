@@ -20,7 +20,19 @@ export const runtime = "nodejs";
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const format = (params.get("format") ?? "json").toLowerCase();
-  const range = parseRange(params.get("from"), params.get("to"));
+  const explicitFrom = params.get("from");
+  const explicitTo = params.get("to");
+  const range = parseRange(explicitFrom, explicitTo);
+  /**
+   * النسخة الاحتياطية لازم تكون **كاملة** مش محدودة بالشهر الحالي.
+   * من غير كده المستخدم ينزّل نسخة فاكر إنها كل بياناته وهي شهر بس،
+   * ولو رجّعها بـ«استبدال كامل» هيخسر الباقي. فلو المستخدم مش محدّد فترة،
+   * النسخة بتاخد كل التاريخ (من 1970 لبكرة).
+   */
+  const backupRange =
+    explicitFrom || explicitTo
+      ? range
+      : parseRange("1970-01-01", new Date(Date.now() + 86_400_000).toISOString());
   const cmpFrom = params.get("cmpFrom");
   const cmpTo = params.get("cmpTo");
   const stamp = new Date().toISOString().slice(0, 10);
@@ -70,7 +82,7 @@ export async function GET(req: NextRequest) {
 
     // نسخة احتياطية كاملة (كل الجداول + الإعدادات غير الحساسة)
     if (format === "backup") {
-      const data = await backupJson(range);
+      const data = await backupJson(backupRange);
       return NextResponse.json(data, {
         headers: { "content-disposition": `attachment; filename="masareefy-backup-${stamp}.json"` },
       });

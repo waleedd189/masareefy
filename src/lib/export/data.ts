@@ -1,6 +1,19 @@
 import { and, asc, gte, lte } from "drizzle-orm";
 import { db } from "@/db/client";
-import { cards, categories, debts, goals, messages, recurringRules, settings, transactions } from "@/db/schema";
+import {
+  cards,
+  categories,
+  debts,
+  goals,
+  messages,
+  parserRules,
+  parserWords,
+  recurringRules,
+  senderLinks,
+  settings,
+  statements,
+  transactions,
+} from "@/db/schema";
 import { formatDate, formatMoney, round2 } from "@/lib/format";
 import { buildXlsx, type SheetData } from "@/lib/export/xlsx";
 import { getBudgetSummary } from "@/lib/services/budgets";
@@ -39,11 +52,17 @@ export interface ExportData {
   debts: typeof debts.$inferSelect[];
   recurring: typeof recurringRules.$inferSelect[];
   settings: { key: string; value: string }[];
+  /** أرشيف كشوف الحساب (من غير حدود النطاق — الأرشيف كله) */
+  statements: typeof statements.$inferSelect[];
+  /** البيانات المتعلَّمة: مفردات المحلل + روابط المرسلين + القواعد المخصّصة */
+  parserWords: typeof parserWords.$inferSelect[];
+  senderLinks: typeof senderLinks.$inferSelect[];
+  parserRules: typeof parserRules.$inferSelect[];
 }
 
 export async function collectExportData(range: DateRange): Promise<ExportData> {
   const between = and(gte(transactions.occurredAt, range.from), lte(transactions.occurredAt, range.to));
-  const [txs, msgs, cds, cats, gls, dbs, rec, cfg] = await Promise.all([
+  const [txs, msgs, cds, cats, gls, dbs, rec, cfg, stmts, words, links, rules] = await Promise.all([
     db.select().from(transactions).where(between).orderBy(asc(transactions.occurredAt)),
     db
       .select()
@@ -56,6 +75,10 @@ export async function collectExportData(range: DateRange): Promise<ExportData> {
     db.select().from(debts).orderBy(asc(debts.createdAt)),
     db.select().from(recurringRules).orderBy(asc(recurringRules.createdAt)),
     db.select().from(settings),
+    db.select().from(statements),
+    db.select().from(parserWords),
+    db.select().from(senderLinks),
+    db.select().from(parserRules),
   ]);
 
   return {
@@ -68,6 +91,10 @@ export async function collectExportData(range: DateRange): Promise<ExportData> {
     debts: dbs,
     recurring: rec,
     settings: cfg.map((row) => ({ key: row.key, value: row.value })),
+    statements: stmts,
+    parserWords: words,
+    senderLinks: links,
+    parserRules: rules,
   };
 }
 
@@ -186,7 +213,11 @@ export async function backupJson(range: DateRange) {
   const totals = summarize(data);
   return {
     app: "مصاريفي",
-    version: 2,
+    /**
+     * الإصدار 3 بيضيف: أرشيف الكشوف + البيانات المتعلَّمة (مفردات/روابط مرسلين/قواعد).
+     * الاستيراد بيفهم الإصدارين 2 و3 (الناقص بيتعامل معاه كفاضي).
+     */
+    version: 3,
     generatedAt: new Date().toISOString(),
     range: { from: range.from.toISOString(), to: range.to.toISOString() },
     totals: {
@@ -207,6 +238,10 @@ export async function backupJson(range: DateRange) {
     transactions: data.transactions,
     messages: data.messages,
     settings: data.settings.filter((s) => !s.value.startsWith("msr_")),
+    statements: data.statements,
+    parserWords: data.parserWords,
+    senderLinks: data.senderLinks,
+    parserRules: data.parserRules,
   };
 }
 
