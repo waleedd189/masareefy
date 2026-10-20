@@ -115,6 +115,24 @@ vercel --prod                                # بيرفع الكود المحل�
 
 ## بديل VPS (من غير Vercel)
 
+### Docker (الأسهل — الملفين موجودين في المستودع)
+
+```bash
+git clone -b arena/6cef6377-masareefy https://github.com/waleedd189/masareefy.git
+cd masareefy
+cp .env.example .env
+# ظبّط في .env: APP_ACCESS_CODE (إلزامي عمليًا) · DATABASE_URL/DATABASE_AUTH_TOKEN (لو Turso)
+docker compose up -d --build
+docker compose logs -f          # استنى سطر «[masareefy] قاعدة البيانات جاهزة»
+```
+
+- الـmigrations بتشتغل **تلقائيًا** عند الإقلاع (مفيش أمر يدوي).
+- البيانات في volume اسمه `masareefy-data` mounted على `/app/data` ⇒ بتفضل بعد `docker compose down`.
+- `Dockerfile` متعدد المراحل: مرحلة بناء كاملة، ومرحلة تشغيل بتبعيات الإنتاج فقط + مستخدم غير root + healthcheck.
+- غيّر المنفذ من `PORT=8080` في `.env`، وحطّ Caddy/nginx قدامه للـHTTPS.
+
+### من غير Docker
+
 ```bash
 git clone -b arena/6cef6377-masareefy https://github.com/waleedd189/masareefy.git
 cd masareefy && npm ci

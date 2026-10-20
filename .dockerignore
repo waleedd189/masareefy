@@ -1,0 +1,38 @@
+# ما يدخلش سياق البناء (يبطّئ ويرفع حجم الصورة)
+.git
+.gitignore
+.github
+
+# تبعيات ومخرجات — بتتعمل من جديد جوه الصورة
+node_modules
+.next
+out
+dist
+build
+coverage
+
+# البيانات المحلية والأسرار — عمرها ما تدخل صورة
+data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example
+
+# مرجعيات وتحليلات مالهاش لازمة في التشغيل
+reference-apks
+docs
+scratch
+*.apk
+
+# ملفات تطوير
+.vscode
+.idea
+*.log
+npm-debug.log*
+.eslintcache
+Dockerfile
+docker-compose.yml
+.dockerignore

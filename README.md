@@ -305,7 +305,17 @@ turso db tokens create masareefy       # ← DATABASE_AUTH_TOKEN
 
 - **VPS / أي سيرفر Node:** `npm ci && npm run build && APP_ACCESS_CODE=... npm run start`
   (أو خلف nginx/Caddy مع HTTPS)، وقاعدة البيانات ملف محلي عادي.
-- **Docker:** `npm run build` ثم `npm run start` — مع volume على `/app/data`.
+- **Docker (موصى به للـVPS):** الملفين جاهزين — `Dockerfile` متعدد المراحل (بناء ← تشغيل بتبعيات الإنتاج فقط) و`docker-compose.yml` فيه volume للبيانات وhealthcheck:
+
+```bash
+cp .env.example .env                      # ظبّط APP_ACCESS_CODE (وTurso لو هتستخدمه)
+docker compose up -d --build              # بناء وتشغيل
+docker compose logs -f                    # هتشوف «[masareefy] قاعدة البيانات جاهزة»
+curl -I http://localhost:3000/            # 200
+```
+
+  الـmigrations بتشتغل تلقائيًا عند الإقلاع، وقاعدة SQLite بتفضل في الـvolume (`masareefy-data:/app/data`)
+  بعد إعادة إنشاء الحاوية. قدامه Caddy/nginx للـHTTPS، وغيّر المنفذ من `PORT=8080` في `.env` لو 3000 محجوز.
 - **PostgreSQL:** بدّل `drizzle-orm/libsql` بـ `drizzle-orm/node-postgres` في
   `src/db/client.ts` وغيّر `dialect` في `drizzle.config.ts`.
 
