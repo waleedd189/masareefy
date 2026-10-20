@@ -77,7 +77,7 @@ export function StatCard({
         <span className="text-xs font-semibold text-ink-400">{label}</span>
         {icon ? <span className="text-lg opacity-80">{icon}</span> : null}
       </div>
-      <p className="mt-2 text-2xl font-extrabold tabular-nums tracking-tight">{value}</p>
+      <p data-money className="mt-2 text-2xl font-extrabold tabular-nums tracking-tight">{value}</p>
       <div className="mt-1 flex items-center gap-2 text-[11px]">
         {typeof trend === "number" ? (
           <span
@@ -97,12 +97,17 @@ export function StatCard({
 export function Badge({
   children,
   className = "",
+  title,
 }: {
   children: ReactNode;
   className?: string;
+  title?: string;
 }) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${className}`}>
+    <span
+      title={title}
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${className}`}
+    >
       {children}
     </span>
   );

@@ -5,8 +5,13 @@ import { cards, messages, parserRules, transactions, type Card } from "@/db/sche
 import { normalizeMessage } from "@/lib/sms/normalize";
 import { parseSms } from "@/lib/sms/parse";
 import type { ParsedSms, TxType } from "@/lib/sms/types";
+import { PARSER_VERSION } from "@/lib/sms/templates";
+import { getPolicy } from "@/lib/settings-store";
 import { recomputeCard } from "./balances";
 import { suggestCategoryId } from "./categorize";
+import { decideMessage, REASON_LABELS, type DecisionReason } from "./policy";
+import { findLink, learnFromApproval } from "./sender-links";
+import { bumpWordHits, getUserWordsForParser } from "./words";
 
 export const MIN_AUTO_CONFIDENCE = 0.55;
 
@@ -28,6 +33,12 @@ export interface IngestResult {
   cardId: string | null;
   parsed: ParsedSms | null;
   reason?: string;
+  /** قرار محرّك السياسة */
+  decision?: "AUTO_POST" | "REVIEW" | "DROP";
+  /** أسباب القرار (للعرض في الواجهة وفي رد الـwebhook) */
+  reasons?: DecisionReason[];
+  templateId?: string | null;
+  confidenceLevel?: string | null;
 }
 
 export function hashMessage(text: string, sender?: string | null): string {
@@ -51,12 +62,22 @@ export async function matchCard(parsed: ParsedSms): Promise<{ card: Card | null;
   return { card: null, ambiguous: false };
 }
 
-/** استقبال رسالة بنك: تحليل ← مطابقة بطاقة ← إنشاء عملية */
+/**
+ * استقبال رسالة بنك:
+ * تحليل (قواعد مستخدم ← قوالب موثّقة ← محرّك عام) ← مطابقة حساب (رابط مرسل ← آخر 4 أرقام)
+ * ← قرار السياسة (تسجيل آلي / مراجعة / تجاهل) بأسباب صريحة.
+ */
 export async function ingestMessage(input: IngestInput): Promise<IngestResult> {
   const rawText = (input.rawText ?? "").trim();
   if (rawText.length < 5) {
     return { messageId: null, status: "FAILED", transactionId: null, cardId: null, parsed: null, reason: "رسالة فارغة" };
   }
+
+  const [policy, userWords, rules] = await Promise.all([
+    getPolicy(),
+    getUserWordsForParser(),
+    db.select().from(parserRules).where(eq(parserRules.enabled, true)),
+  ]);
 
   const hash = hashMessage(rawText, input.sender);
   const [existing] = await db.select().from(messages).where(eq(messages.hash, hash)).limit(1);
@@ -69,14 +90,16 @@ export async function ingestMessage(input: IngestInput): Promise<IngestResult> {
       cardId: existing.cardId,
       parsed: existing.parsed ? (JSON.parse(existing.parsed) as ParsedSms) : null,
       reason: "الرسالة دي مسجلة قبل كده",
+      decision: "DROP",
+      reasons: ["DUPLICATE"],
     };
   }
 
-  const rules = await db.select().from(parserRules).where(eq(parserRules.enabled, true));
   const receivedAt = input.receivedAt ?? new Date();
   const parsed = parseSms(rawText, {
     sender: input.sender,
     receivedAt,
+    userWords,
     customRules: rules
       .sort((a, b) => a.priority - b.priority)
       .map((r) => ({
@@ -89,35 +112,43 @@ export async function ingestMessage(input: IngestInput): Promise<IngestResult> {
       })),
   });
 
+  // مطابقة الحساب: إجبار يدوي ← رابط مرسل متعلَّم ← آخر 4 أرقام
+  const link = await findLink(input.sender, parsed.last4);
   let card: Card | null = null;
   let ambiguous = false;
+
   if (input.cardId) {
     const [forced] = await db.select().from(cards).where(eq(cards.id, input.cardId)).limit(1);
     card = forced ?? null;
-  } else {
+  } else if (link?.cardId) {
+    const [linked] = await db
+      .select()
+      .from(cards)
+      .where(and(eq(cards.id, link.cardId), eq(cards.isArchived, false)))
+      .limit(1);
+    card = linked ?? null;
+  }
+
+  if (!card) {
     const match = await matchCard(parsed);
     card = match.card;
     ambiguous = match.ambiguous;
   }
 
-  let status: IngestStatus;
-  let reason: string | undefined;
-  if (!parsed.isFinancial) {
-    status = "IGNORED";
-    reason = parsed.warnings[0] ?? "رسالة غير مالية";
-  } else if (!card) {
-    status = "UNMATCHED";
-    reason = ambiguous
-      ? "أكتر من بطاقة بنفس آخر 4 أرقام – اختر البطاقة يدوياً"
-      : parsed.last4
-        ? `مفيش بطاقة مسجلة برقم ${parsed.last4}`
-        : "لم يتم التعرف على رقم البطاقة";
-  } else if (parsed.confidence < MIN_AUTO_CONFIDENCE) {
-    status = "NEEDS_REVIEW";
-    reason = "درجة الثقة منخفضة – راجع البيانات";
-  } else {
-    status = "PARSED";
-  }
+  const decision = decideMessage({
+    parsed,
+    card,
+    ambiguous,
+    link,
+    policy,
+    parserVersion: PARSER_VERSION,
+    homeCurrency: card?.currency ?? "EGP",
+  });
+
+  const status = decision.status as IngestStatus;
+  const reason =
+    decision.message ??
+    (decision.reasons.length ? REASON_LABELS[decision.reasons[0]] : status === "PARSED" ? undefined : "تحتاج مراجعة");
 
   const [message] = await db
     .insert(messages)
@@ -132,13 +163,19 @@ export async function ingestMessage(input: IngestInput): Promise<IngestResult> {
       parsed: JSON.stringify(parsed),
       cardId: card?.id ?? null,
       error: reason ?? null,
+      decision: decision.decision,
+      reasons: JSON.stringify(decision.reasons),
+      templateId: parsed.templateId ?? null,
       source: input.source ?? "PASTE",
     })
     .returning();
 
   let transactionId: string | null = null;
-  if (status === "PARSED" && card && parsed.amount !== null) {
-    const categoryId = await suggestCategoryId({ merchant: parsed.merchant, text: rawText, type: parsed.type });
+  if (decision.decision === "AUTO_POST" && card && parsed.amount !== null) {
+    const categoryId =
+      (link?.categoryId ?? null) ||
+      (await suggestCategoryId({ merchant: parsed.merchant, text: rawText, type: parsed.type }));
+
     const [tx] = await db
       .insert(transactions)
       .values({
@@ -160,9 +197,31 @@ export async function ingestMessage(input: IngestInput): Promise<IngestResult> {
       .returning();
     transactionId = tx.id;
     await recomputeCard(card.id);
+
+    // تعلّم: قوّي رابط المرسل + زوّد عدّاد الكلمة المستخدمة
+    if (policy.learnFromApprovals && input.sender) {
+      await learnFromApproval({
+        sender: input.sender,
+        last4: parsed.last4,
+        cardId: card.id,
+        categoryId,
+      });
+    }
+    await bumpWordHits(parsed.matchedWord);
   }
 
-  return { messageId: message.id, status, transactionId, cardId: card?.id ?? null, parsed, reason };
+  return {
+    messageId: message.id,
+    status,
+    transactionId,
+    cardId: card?.id ?? null,
+    parsed,
+    reason,
+    decision: decision.decision,
+    reasons: decision.reasons,
+    templateId: parsed.templateId ?? null,
+    confidenceLevel: parsed.confidenceLevel ?? null,
+  };
 }
 
 /** تحويل رسالة تحت المراجعة لعملية فعلية بعد تعديل المستخدم */
@@ -178,12 +237,16 @@ export async function confirmMessage(
     occurredAt?: Date;
     categoryId?: string | null;
     availableAfter?: number | null;
+    goalId?: string | null;
+    learnLink?: boolean;
   },
 ): Promise<string> {
   const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
   if (!message) throw new Error("الرسالة غير موجودة");
   const [card] = await db.select().from(cards).where(eq(cards.id, overrides.cardId)).limit(1);
   if (!card) throw new Error("البطاقة غير موجودة");
+
+  const parsed = message.parsed ? (JSON.parse(message.parsed) as ParsedSms) : null;
 
   const categoryId =
     overrides.categoryId !== undefined && overrides.categoryId !== null
@@ -200,6 +263,7 @@ export async function confirmMessage(
     occurredAt: overrides.occurredAt ?? message.receivedAt,
     availableAfter: overrides.availableAfter ?? null,
     categoryId,
+    goalId: overrides.goalId ?? null,
     source: "SMS" as const,
     updatedAt: new Date(),
   };
@@ -217,7 +281,27 @@ export async function confirmMessage(
     transactionId = created.id;
   }
 
-  await db.update(messages).set({ status: "PARSED", cardId: card.id, error: null }).where(eq(messages.id, messageId));
+  await db
+    .update(messages)
+    .set({
+      status: "PARSED",
+      decision: "AUTO_POST",
+      cardId: card.id,
+      error: null,
+      reasons: JSON.stringify([]),
+    })
+    .where(eq(messages.id, messageId));
   await recomputeCard(card.id);
+
+  // كل موافقة بتقوّي رابط المرسل — نفس `approved_count` في Mezanetak
+  if (overrides.learnLink !== false) {
+    await learnFromApproval({
+      sender: message.sender,
+      last4: parsed?.last4 ?? card.last4,
+      cardId: card.id,
+      categoryId,
+    });
+  }
+
   return transactionId;
 }

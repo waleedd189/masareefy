@@ -65,7 +65,7 @@ export function TransactionList({
 
             <div className="text-left">
               <p className={`text-sm font-extrabold tabular-nums ${isIn ? "text-emerald-300" : "text-ink-50"}`}>
-                {isIn ? "+" : "−"} {formatMoney(tx.amount, tx.currency)}
+                <span data-money>{isIn ? "+" : "−"} {formatMoney(tx.amount, tx.currency)}</span>
               </p>
               {tx.fxAmount && tx.fxCurrency ? (
                 <p className="text-[10px] text-ink-400">{formatMoney(tx.fxAmount, tx.fxCurrency)}</p>

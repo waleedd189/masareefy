@@ -38,6 +38,12 @@ export const DEFAULT_DIRECTION: Record<TxType, Direction> = {
   UNKNOWN: "OUT",
 };
 
+/** مستوى الثقة: قالب موثّق، قاعدة مستخدم، أو المحرّك العام */
+export type ConfidenceLevel = "VERIFIED" | "CUSTOM" | "GENERIC";
+
+/** سبب استبعاد رسالة غير قابلة للتسجيل */
+export type ExclusionReason = "OTP" | "NO_AMOUNT" | "NO_TRANSACTION" | "PROMO" | "PERSONAL_SENDER" | null;
+
 export interface ParsedSms {
   /** هل الرسالة مالية أصلاً (مش OTP أو إعلان) */
   isFinancial: boolean;
@@ -59,6 +65,22 @@ export interface ParsedSms {
   matchedRule: string | null;
   normalizedText: string;
   warnings: string[];
+  /** معرّف القالب الموثّق اللي طابق الرسالة (لو فيه) */
+  templateId?: string | null;
+  /** VERIFIED = قالب موثّق · CUSTOM = قاعدة مستخدم · GENERIC = المحرّك العام */
+  confidenceLevel?: ConfidenceLevel;
+  /** الكلمة اللي حدّدت نوع العملية */
+  matchedWord?: string | null;
+  /** سبب الاستبعاد لو الرسالة مش مالية */
+  exclusion?: ExclusionReason;
+}
+
+/** كلمة يتعلّمها المستخدم وتُمرَّر للمحلل */
+export interface WordRule {
+  wordKey: string;
+  display: string;
+  kind: string;
+  categoryId?: string | null;
 }
 
 export interface CustomRule {

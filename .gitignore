@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# …لكن قالب المتغيرات من غير أسرار بيتابع عشان النشر
+!.env.example
 
 # vercel
 .vercel
@@ -48,3 +50,8 @@ next-env.d.ts
 
 # ملفات مؤقتة
 *.tsbuildinfo
+
+# ملفات المرجع الكبيرة (APK للتحليل) — بتتحمل محليًا ومش بتتخزن في Git
+/reference-apks/*.apk
+/reference-apks/*.aab
+/reference-apks/*.xapk

@@ -1,0 +1,54 @@
+# تشغيل «مصاريفي» بـDocker Compose — VPS أو جهازك الشخصي
+#
+# الاستخدام:
+#   docker compose up -d --build        # بناء وتشغيل
+#   docker compose logs -f              # متابعة اللوجز (هتشوف سطر "قاعدة البيانات جاهزة")
+#   docker compose exec app npm run db:seed   # بيانات تجريبية (اختياري)
+#   docker compose down                 # إيقاف (البيانات محفوظة في الـvolume)
+#
+# المتغيرات بتتقرا من ملف `.env` جنب الملف ده (انسخ من `.env.example`)،
+# ولو سبتها فاضية هتشتغل بالقيم الافتراضية المكتوبة تحت.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: masareefy:latest
+    container_name: masareefy
+    restart: unless-stopped
+    ports:
+      # غيّر الطرف الشمال لو 3000 محجوز (مثلاً "8080:3000")
+      - "${PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      # قاعدة محلية في الـvolume…
+      DATABASE_URL: ${DATABASE_URL:-file:./data/masareefy.db}
+      # …أو Turso سحابية: DATABASE_URL=libsql://xxxx.turso.io + التوكن تحت
+      DATABASE_AUTH_TOKEN: ${DATABASE_AUTH_TOKEN:-}
+      # ⚠️ مهم للنشر العام: بوابة كلمة السر (التطبيق مفيهوش تسجيل دخول)
+      APP_ACCESS_CODE: ${APP_ACCESS_CODE:-}
+    volumes:
+      # البيانات والـmigrations بتفضل بعد إعادة إنشاء الحاوية
+      - masareefy-data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(function(r){process.exit(r.ok?0:1)}).catch(function(){process.exit(1)})"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    # لو على VPS وعايز HTTPS، حطّ قدامه Caddy/nginx:
+    # networks: [web]
+
+volumes:
+  masareefy-data:
+    driver: local
+
+# networks:
+#   web:
+#     external: true

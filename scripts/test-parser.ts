@@ -17,6 +17,10 @@ for (const sample of SAMPLE_MESSAGES) {
     balance: parsed.availableBalance,
     date: parsed.occurredAt?.toISOString().slice(0, 16),
     conf: parsed.confidence,
+    level: parsed.confidenceLevel,
+    template: parsed.templateId,
+    word: parsed.matchedWord,
+    exclusion: parsed.exclusion,
     financial: parsed.isFinancial,
   });
 }

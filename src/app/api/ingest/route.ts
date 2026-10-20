@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
+import { hashToken } from "@/lib/auth-token";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { apiTokens } from "@/db/schema";
@@ -29,7 +30,12 @@ async function authorize(request: NextRequest): Promise<boolean> {
 
   if (process.env.INGEST_TOKEN && token === process.env.INGEST_TOKEN) return true;
 
-  const [row] = await db.select().from(apiTokens).where(eq(apiTokens.token, token)).limit(1);
+  const hash = hashToken(token);
+  const [row] = await db
+    .select()
+    .from(apiTokens)
+    .where(or(eq(apiTokens.tokenHash, hash), eq(apiTokens.token, token)))
+    .limit(1);
   if (!row) return false;
   await db.update(apiTokens).set({ lastUsedAt: new Date() }).where(eq(apiTokens.id, row.id));
   return true;
@@ -88,6 +94,14 @@ export async function POST(request: NextRequest) {
       amount: result.parsed?.amount ?? null,
       last4: result.parsed?.last4 ?? null,
       reason: result.reason,
+      // قرار محرّك السياسة وأسبابه — عشان تطبيق الموبايل يفهم ليه الرسالة اتأجلت
+      decision: result.decision ?? null,
+      reasons: result.reasons ?? [],
+      templateId: result.templateId ?? null,
+      confidence: result.parsed?.confidence ?? null,
+      confidenceLevel: result.confidenceLevel ?? null,
+      bank: result.parsed?.bankKey ?? null,
+      type: result.parsed?.type ?? null,
     });
   }
 

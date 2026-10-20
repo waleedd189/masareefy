@@ -5,9 +5,12 @@
   --font-sans: "Cairo Variable", "Cairo", system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --color-ink-50: #f5f8fa;
+  --color-ink-100: #e6edf5;
+  --color-ink-200: #cbd7e5;
   --color-ink-300: #93a4bb;
   --color-ink-400: #6c7f99;
   --color-ink-500: #4a5b73;
+  --color-ink-600: #2c3a4f;
   --color-ink-700: #1b2535;
   --color-ink-800: #131c29;
   --color-ink-900: #0c1420;
@@ -17,6 +20,102 @@
   --color-brand-400: #34d399;
   --color-brand-500: #10b981;
   --color-brand-600: #059669;
+
+  /* مقياس الاستدارة: بيتحكم فيه السمة (حاد/ناعم/دائري) */
+  --radius-scale: 1;
+}
+
+/* ───────────────────────── السمات ─────────────────────────
+   كل سمة بتعيد تعريف متغيرات الألوان بس، فكل الواجهات تتغير
+   من غير ولا class إضافي في المكوّنات. */
+
+/* لون التمييز */
+html[data-accent="sky"] {
+  --color-brand-300: #7dd3fc;
+  --color-brand-400: #38bdf8;
+  --color-brand-500: #0ea5e9;
+  --color-brand-600: #0284c7;
+}
+html[data-accent="violet"] {
+  --color-brand-300: #c4b5fd;
+  --color-brand-400: #a78bfa;
+  --color-brand-500: #8b5cf6;
+  --color-brand-600: #7c3aed;
+}
+html[data-accent="amber"] {
+  --color-brand-300: #fcd34d;
+  --color-brand-400: #fbbf24;
+  --color-brand-500: #f59e0b;
+  --color-brand-600: #d97706;
+}
+html[data-accent="rose"] {
+  --color-brand-300: #fda4af;
+  --color-brand-400: #fb7185;
+  --color-brand-500: #f43f5e;
+  --color-brand-600: #e11d48;
+}
+html[data-accent="teal"] {
+  --color-brand-300: #5eead4;
+  --color-brand-400: #2dd4bf;
+  --color-brand-500: #14b8a6;
+  --color-brand-600: #0d9488;
+}
+
+/* حجم الخط الأساسي — كل الـrem بيكبر/يصغر معاه */
+html[data-font="sm"] {
+  font-size: 14.5px;
+}
+html[data-font="lg"] {
+  font-size: 17.5px;
+}
+html[data-font="xl"] {
+  font-size: 19px;
+}
+
+/* الاستدارة */
+html[data-radius="sharp"] {
+  --radius-scale: 0.4;
+}
+html[data-radius="round"] {
+  --radius-scale: 1.45;
+}
+
+/* الوضع الفاتح: بنعكس سلّم الأحبار — نفس المكوّنات من غير تعديل */
+html[data-mode="light"] {
+  color-scheme: light;
+  --color-ink-50: #0b1220;
+  --color-ink-100: #131d2e;
+  --color-ink-200: #22304a;
+  --color-ink-300: #465a75;
+  --color-ink-400: #5d728c;
+  --color-ink-500: #71839b;
+  --color-ink-600: #c2ccd9;
+  --color-ink-700: #d9e1ea;
+  --color-ink-800: #eef2f7;
+  --color-ink-900: #f8fafc;
+  --color-ink-950: #ffffff;
+}
+
+html[data-mode="light"] body {
+  background:
+    radial-gradient(1100px 600px at 100% -10%, color-mix(in oklab, var(--color-brand-500) 14%, transparent), transparent 60%),
+    radial-gradient(900px 500px at 0% 0%, rgba(99, 102, 241, 0.1), transparent 55%),
+    #f4f7fb;
+}
+
+html[data-mode="light"] .btn-primary {
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/* ترتيب اسم الحساب على البطاقة: الاسم الأول ولا آخر 4 أرقام الأول */
+html[data-name-order="last4"] [data-card-name] {
+  order: 2;
+  margin-top: 0.9rem;
+}
+html[data-name-order="last4"] [data-card-last4] {
+  order: 1;
+  margin-top: 0;
 }
 
 @layer base {
@@ -30,7 +129,7 @@
 
   body {
     background:
-      radial-gradient(1100px 600px at 100% -10%, rgba(16, 185, 129, 0.12), transparent 60%),
+      radial-gradient(1100px 600px at 100% -10%, color-mix(in oklab, var(--color-brand-500) 14%, transparent), transparent 60%),
       radial-gradient(900px 500px at 0% 0%, rgba(79, 70, 229, 0.12), transparent 55%),
       var(--color-ink-950);
     color: var(--color-ink-50);
@@ -62,12 +161,12 @@
   background: color-mix(in oklab, var(--color-ink-900) 85%, transparent);
   border: 1px solid color-mix(in oklab, var(--color-ink-700) 75%, transparent);
   backdrop-filter: blur(12px);
-  border-radius: 1.25rem;
+  border-radius: calc(1.25rem * var(--radius-scale));
 }
 
 @utility field {
   width: 100%;
-  border-radius: 0.85rem;
+  border-radius: calc(0.85rem * var(--radius-scale));
   border: 1px solid color-mix(in oklab, var(--color-ink-700) 85%, transparent);
   background: color-mix(in oklab, var(--color-ink-950) 70%, transparent);
   padding: 0.6rem 0.85rem;
@@ -90,13 +189,13 @@
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  border-radius: 0.85rem;
+  border-radius: calc(0.85rem * var(--radius-scale));
   background: linear-gradient(135deg, var(--color-brand-500), var(--color-brand-600));
   padding: 0.6rem 1.1rem;
   font-size: 0.88rem;
   font-weight: 700;
   color: #04170f;
-  box-shadow: 0 10px 30px -12px rgba(16, 185, 129, 0.8);
+  box-shadow: 0 10px 30px -12px color-mix(in oklab, var(--color-brand-500) 80%, transparent);
   transition: transform 0.12s ease, filter 0.15s ease;
   cursor: pointer;
 }
@@ -106,7 +205,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  border-radius: 0.85rem;
+  border-radius: calc(0.85rem * var(--radius-scale));
   border: 1px solid color-mix(in oklab, var(--color-ink-700) 85%, transparent);
   background: color-mix(in oklab, var(--color-ink-800) 60%, transparent);
   padding: 0.5rem 0.9rem;
@@ -121,7 +220,7 @@ input:focus,
 select:focus,
 textarea:focus {
   border-color: var(--color-brand-500) !important;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-brand-500) 22%, transparent);
 }
 
 .btn-primary:hover {
@@ -152,4 +251,67 @@ select option {
 
 .animate-rise {
   animation: rise 0.35s ease both;
+}
+
+/* مقياس الاستدارة بيطبّق كمان على الكروت والألواح المبنية بـrounded-* */
+.rounded-xl {
+  border-radius: calc(0.75rem * var(--radius-scale));
+}
+.rounded-2xl {
+  border-radius: calc(1rem * var(--radius-scale));
+}
+.rounded-3xl {
+  border-radius: calc(1.5rem * var(--radius-scale));
+}
+
+/* إحجام الخط في السمة الكبيرة/الصغيرة */
+html[data-font="sm"] .field,
+html[data-font="sm"] .btn-primary,
+html[data-font="sm"] .btn-ghost {
+  font-size: 0.82rem;
+}
+html[data-font="lg"] .field,
+html[data-font="lg"] .btn-primary,
+html[data-font="lg"] .btn-ghost,
+html[data-font="xl"] .field,
+html[data-font="xl"] .btn-primary,
+html[data-font="xl"] .btn-ghost {
+  font-size: 0.95rem;
+}
+
+/* إخفاء الأرصدة: بيطمس أي عنصر فيه مبلغ (بيتحكم فيه HideBalancesToggle) */
+html.hide-money [data-money] {
+  filter: blur(7px);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* الطباعة: تقرير نظيف بدون خلفية داكنة أو عناصر تحكم */
+@media print {
+  :root {
+    color-scheme: light;
+  }
+  body {
+    background: #fff !important;
+    color: #0f172a !important;
+  }
+  .surface {
+    background: #fff !important;
+    border-color: #cbd5e1 !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+  .print\:hidden,
+  nav,
+  aside,
+  button,
+  form {
+    display: none !important;
+  }
+  [data-money] {
+    filter: none !important;
+  }
+  * {
+    color: #0f172a !important;
+  }
 }

@@ -1,7 +1,15 @@
 import { detectBank } from "./banks";
 import { CURRENCY_PATTERN, resolveCurrency } from "./currency";
 import { foldArabic, normalizeMessage, parseAmount } from "./normalize";
-import { DEFAULT_DIRECTION, type CustomRule, type Direction, type ParsedSms, type TxType } from "./types";
+import { SMS_TEMPLATES, genericTemplates, templatesForBank } from "./templates";
+import { matchWord, type UserWord } from "./vocabulary";
+import {
+  DEFAULT_DIRECTION,
+  type CustomRule,
+  type Direction,
+  type ParsedSms,
+  type TxType,
+} from "./types";
 
 const NUM = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:[.,]\d{1,2})?`;
 const WORD_EDGE_BEFORE = String.raw`(?<![\p{L}\p{N}])`;
@@ -282,6 +290,13 @@ export function extractDate(text: string, fallback?: Date | null): Date | null {
   return fallback ?? null;
 }
 
+/** المرسل رقم موبايل شخصي (مش اسم جهة) */
+export function isPersonalSender(sender?: string | null): boolean {
+  if (!sender) return false;
+  const digits = sender.replace(/[^\d+]/g, "");
+  return /^\+?\d{7,15}$/.test(digits) && !/(cash|bank|pay|fawry|meeza|valu)/i.test(sender);
+}
+
 function detectType(folded: string): { type: TxType; matched: string | null } {
   for (const rule of TYPE_RULES) {
     const hit = includesAny(folded, rule.words);
@@ -301,6 +316,8 @@ export interface ParseOptions {
   sender?: string | null;
   receivedAt?: Date | null;
   customRules?: CustomRule[];
+  /** كلمات يتعلّمها المستخدم (من جدول parser_words) */
+  userWords?: UserWord[];
   defaultCurrency?: string;
 }
 
@@ -329,6 +346,10 @@ export function parseSms(rawText: string, options: ParseOptions = {}): ParsedSms
     matchedRule: null,
     normalizedText: text,
     warnings,
+    templateId: null,
+    confidenceLevel: "GENERIC",
+    matchedWord: null,
+    exclusion: null,
   };
 
   // 1) القواعد المخصّصة أولاً
@@ -351,6 +372,44 @@ export function parseSms(rawText: string, options: ParseOptions = {}): ParsedSms
       break;
     } catch {
       warnings.push(`قاعدة غير صالحة: ${rule.name}`);
+    }
+  }
+
+
+  // 1.5) القوالب الموثّقة للبنك (ثم الصيغ العامة الموثّقة)
+  if (result.amount === null || result.last4 === null) {
+    const candidates = [...templatesForBank(result.bankKey), ...genericTemplates()];
+    for (const template of candidates) {
+      let match: RegExpExecArray | null = null;
+      try {
+        const re = new RegExp(template.pattern, "iu");
+        match = re.exec(text) ?? re.exec(folded);
+      } catch {
+        continue;
+      }
+      if (!match?.groups) continue;
+      const g = match.groups;
+      const amount = g.amount ? parseAmount(g.amount) : null;
+      if (amount === null) continue;
+
+      result.templateId = template.id;
+      result.confidenceLevel = template.bankKey === "generic" ? "GENERIC" : "VERIFIED";
+      result.amount = amount;
+      if (template.bankKey !== "generic") result.bankKey = template.bankKey;
+      if (g.currency) result.currency = result.currency ?? resolveCurrency(g.currency);
+      if (g.currency2 && g.balance) {
+        result.fxAmount = result.amount;
+        result.fxCurrency = result.currency;
+        result.amount = parseAmount(g.balance);
+        result.currency = resolveCurrency(g.currency2) ?? result.currency;
+      }
+      if (g.last4) result.last4 = g.last4;
+      if (g.merchant) result.merchant = g.merchant.trim().replace(/[,.;]+$/u, "").slice(0, 60) || null;
+      if (g.balance && !result.fxAmount) result.availableBalance = parseAmount(g.balance);
+      if (g.date) result.occurredAt = extractDate(g.date, options.receivedAt ?? null);
+      result.type = template.kind;
+      result.direction = template.direction;
+      break;
     }
   }
 
@@ -390,19 +449,46 @@ export function parseSms(rawText: string, options: ParseOptions = {}): ParsedSms
   if (!result.merchant) result.merchant = extractMerchant(text);
   if (!result.occurredAt) result.occurredAt = extractDate(text, options.receivedAt ?? null);
 
+  const wordHit = matchWord(folded, options.userWords ?? []);
+  if (wordHit) {
+    result.matchedWord = wordHit.word;
+    if (result.type === "UNKNOWN" && wordHit.kind !== "IGNORE") result.type = wordHit.kind as TxType;
+    if (wordHit.kind === "IGNORE") {
+      result.isFinancial = false;
+      result.exclusion = "PROMO";
+      warnings.push(`الرسالة اتستبعدت بسبب كلمة: ${wordHit.word}`);
+    }
+  }
   const typeInfo = detectType(folded);
   if (result.type === "UNKNOWN") result.type = typeInfo.type;
   result.direction = detectDirection(folded, result.type);
+  if (result.templateId) {
+    // القالب الموثّق بيحدّد النوع والاتجاه بشكل قاطع
+    const template = SMS_TEMPLATES.find((t) => t.id === result.templateId);
+    if (template) {
+      result.type = template.kind;
+      result.direction = template.direction;
+    }
+  }
 
   // 3) رسالة غير مالية؟
   const nonFinancial = includesAny(folded, NON_FINANCIAL_WORDS);
   if (nonFinancial && (result.amount === null || /otp|رمز التحقق|كود التحقق|verification code/iu.test(folded))) {
     result.isFinancial = false;
+    result.exclusion = /otp|verification code|رمز التحقق|كود التحقق/iu.test(folded) ? "OTP" : "PROMO";
     warnings.push("الرسالة تبدو غير مالية (كود تحقق أو إعلان)");
   }
   if (result.amount === null) {
     result.isFinancial = false;
+    result.exclusion = result.exclusion ?? "NO_AMOUNT";
     warnings.push("لم يتم العثور على مبلغ في الرسالة");
+  } else if (result.type === "UNKNOWN" && !result.matchedWord) {
+    result.exclusion = result.exclusion ?? "NO_TRANSACTION";
+  }
+  if (isPersonalSender(options.sender)) {
+    result.exclusion = "PERSONAL_SENDER";
+    result.isFinancial = false;
+    warnings.push("المرسل رقم شخصي مش جهة مالية");
   }
 
   // 4) درجة الثقة
@@ -414,7 +500,15 @@ export function parseSms(rawText: string, options: ParseOptions = {}): ParsedSms
   if (result.bankKey) score += 0.05;
   if (result.merchant) score += 0.05;
   if (result.availableBalance !== null) score += 0.05;
-  if (result.matchedRule) score = Math.max(score, 0.9);
+  if (result.matchedRule) {
+    result.confidenceLevel = "CUSTOM";
+    score = Math.max(score, 0.9);
+  }
+  if (result.templateId) {
+    const boost = result.confidenceLevel === "VERIFIED" ? 0.95 : 0.8;
+    score = Math.max(score, boost);
+  }
+  if (wordHit?.origin === "USER") score = Math.max(score, 0.75);
   if (!result.isFinancial) score = Math.min(score, 0.2);
   result.confidence = Math.round(Math.min(1, score) * 100) / 100;
 

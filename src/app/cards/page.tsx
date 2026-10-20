@@ -2,21 +2,25 @@ import { Suspense } from "react";
 import { CardTile } from "@/components/card-tile";
 import { CollapsiblePanel } from "@/components/collapsible-panel";
 import { CardForm } from "@/components/forms/card-form";
-import { EmptyState, PageHeader, SectionCard } from "@/components/ui";
+import { TransferForm } from "@/components/forms/transfer-form";
+import { Badge, EmptyState, PageHeader, SectionCard } from "@/components/ui";
 import { CARD_TYPE_LABELS } from "@/lib/constants";
-import { formatMoney, maskedCard } from "@/lib/format";
+import { formatDateTime, formatMoney, maskedCard } from "@/lib/format";
 import { listCards, listTransactions } from "@/lib/services/queries";
 import { isSpend, monthRange } from "@/lib/services/stats";
 import { toggleArchiveCardAction } from "@/server/actions/cards";
+import { deleteTransferAction } from "@/server/actions/transfers";
+import { listTransfers } from "@/lib/services/transfers";
 
 export const dynamic = "force-dynamic";
 
 export default async function CardsPage() {
   const { start } = monthRange();
-  const [cards, archived, monthTx] = await Promise.all([
+  const [cards, archived, monthTx, transfers] = await Promise.all([
     listCards(),
     listCards(true),
     listTransactions({ from: start, limit: 500 }),
+    listTransfers(8),
   ]);
 
   const archivedOnly = archived.filter((card) => card.isArchived);
@@ -52,6 +56,55 @@ export default async function CardsPage() {
           description="ابدأ بإضافة بطاقة — محتاج اسمها، البنك، وآخر 4 أرقام بس."
         />
       )}
+
+      {cards.length >= 2 ? (
+        <SectionCard
+          title="⇄ تحويل بين الحسابات"
+          subtitle="من الحساب الجاري للفيزا، أو من المحفظة للكاش — بيتسجل على الطرفين برصيد محدّث"
+        >
+          <TransferForm
+            cards={cards.map((card) => ({
+              id: card.id,
+              name: card.name,
+              last4: card.last4,
+              currency: card.currency,
+              type: card.type,
+              balance: card.currentBalance,
+            }))}
+          />
+        </SectionCard>
+      ) : null}
+
+      {transfers.length ? (
+        <SectionCard title="آخر التحويلات" subtitle="كل تحويل = عمليتين (خارج وداخل) مربوطتين ببعض">
+          <ul className="space-y-2">
+            {transfers.map((tx) => (
+                <li key={tx.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-ink-700/60 bg-ink-950/50 px-3 py-2">
+                  <div className="min-w-0 text-xs">
+                    <p className="truncate font-bold text-ink-100">
+                      {tx.fromName} ← {tx.toName}
+                    </p>
+                    <p className="truncate text-[11px] text-ink-500">
+                      {formatDateTime(tx.occurredAt)}
+                      {tx.description ? ` · ${tx.description}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge className="border-brand-500/30 bg-brand-500/10 text-brand-300">
+                      <span data-money>{formatMoney(tx.amount, tx.currency)}</span>
+                    </Badge>
+                    <form action={deleteTransferAction}>
+                      <input type="hidden" name="transferId" value={tx.transferId} />
+                      <button type="submit" className="text-[11px] font-semibold text-rose-300">
+                        إلغاء التحويل
+                      </button>
+                    </form>
+                  </div>
+                </li>
+            ))}
+          </ul>
+        </SectionCard>
+      ) : null}
 
       {cards.length ? (
         <SectionCard title="ملخص سريع">
